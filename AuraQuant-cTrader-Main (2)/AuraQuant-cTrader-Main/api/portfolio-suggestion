@@ -1,0 +1,35 @@
+# Lógica simplificada dentro da view da API
+
+def get_portfolio_suggestion(risk_profile, capital):
+    # Nossos robôs mockados, com seus IDs e perfis de risco intrínsecos
+    robots = [
+        {"id": 1, "name": "Pairs Trading", "risk_level": "baixo"},
+        {"id": 2, "name": "Price Action Master", "risk_level": "medio"},
+        {"id": 3, "name": "Trend Follower", "risk_level": "alto"},
+    ]
+
+    if risk_profile == "Conservador":
+        # Foco em robôs de baixo risco
+        allocation = {"Pairs Trading": 0.7, "Price Action Master": 0.3}
+        expected_return = 15 # % a.a.
+        max_drawdown = 5 # %
+    
+    elif risk_profile == "Moderado":
+        # Portfólio balanceado
+        allocation = {"Pairs Trading": 0.4, "Price Action Master": 0.4, "Trend Follower": 0.2}
+        expected_return = 30 # % a.a.
+        max_drawdown = 12 # %
+
+    elif risk_profile == "Agressivo":
+        # Foco em robôs de alto risco/retorno
+        allocation = {"Price Action Master": 0.4, "Trend Follower": 0.6}
+        expected_return = 50 # % a.a.
+        max_drawdown = 25 # %
+    
+    # Retorna a alocação sugerida, e as métricas de risco/retorno esperadas
+    return {
+        "allocation": allocation,
+        "expected_return": expected_return,
+        "max_drawdown": max_drawdown,
+        "summary": f"Para um perfil {risk_profile}, sugerimos um portfólio focado em {list(allocation.keys())}."
+    }

@@ -1,0 +1,59 @@
+# =============================================================================
+#           Caddyfile Canônico v16.1 - Sintaxe Universal
+# =============================================================================
+
+plataformabeta.birdstone.com.br {
+    tls renatovargasfernandes@gmail.com
+    encode zstd gzip
+
+    # Cabeçalhos de segurança globais
+    header {
+        Strict-Transport-Security "max-age=31536000;"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # --- Roteamento para o Backend (Django) ---
+    # Usamos um 'handle' separado para cada rota do backend. Esta é a sintaxe mais segura.
+    handle /api/* {
+        reverse_proxy http://127.0.0.1:8000 {
+            header_up Host {host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+    handle /admin/* {
+        reverse_proxy http://127.0.0.1:8000 {
+            header_up Host {host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+    handle /static/* {
+        reverse_proxy http://127.0.0.1:8000 {
+            header_up Host {host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+    handle /media/* {
+        reverse_proxy http://127.0.0.1:8000 {
+            header_up Host {host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+    
+    # --- Roteamento "Catch-all" para o Frontend (React) ---
+    # Este 'handle' final captura tudo o que não foi pego pelos handles acima.
+    handle {
+        root * C:\birdstone\frontend_dist
+        try_files {path} /index.html
+        file_server
+    }
+
+    # --- Logging ---
+    log {
+        output file C:\caddy\logs\birdstone_access.log {
+            roll_size 10mb
+            roll_keep 5
+        }
+    }
+}

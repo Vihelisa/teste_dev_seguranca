@@ -1,0 +1,156 @@
+[{
+	"resource": "/c:/birdstone/frontend/src/api/axios.js",
+	"owner": "typescript",
+	"code": "2451",
+	"severity": 8,
+	"message": "Cannot redeclare block-scoped variable 'API_BASE_URL'.",
+	"source": "ts",
+	"startLineNumber": 5,
+	"startColumn": 7,
+	"endLineNumber": 5,
+	"endColumn": 19,
+	"origin": "extHost1"
+},{
+	"resource": "/c:/birdstone/frontend/src/api/axios.js",
+	"owner": "typescript",
+	"code": "2451",
+	"severity": 8,
+	"message": "Cannot redeclare block-scoped variable 'api'.",
+	"source": "ts",
+	"startLineNumber": 9,
+	"startColumn": 7,
+	"endLineNumber": 9,
+	"endColumn": 10,
+	"origin": "extHost1"
+},{
+	"resource": "/c:/birdstone/frontend/src/api/axios.js",
+	"owner": "typescript",
+	"code": "2528",
+	"severity": 8,
+	"message": "A module cannot have multiple default exports.",
+	"source": "ts",
+	"startLineNumber": 43,
+	"startColumn": 16,
+	"endLineNumber": 43,
+	"endColumn": 19,
+	"relatedInformation": [
+		{
+			"startLineNumber": 86,
+			"startColumn": 16,
+			"endLineNumber": 86,
+			"endColumn": 19,
+			"message": "Another export default is here.",
+			"resource": "/c:/birdstone/frontend/src/api/axios.js"
+		}
+	],
+	"origin": "extHost1"
+},{
+	"resource": "/c:/birdstone/frontend/src/api/axios.js",
+	"owner": "typescript",
+	"code": "2451",
+	"severity": 8,
+	"message": "Cannot redeclare block-scoped variable 'API_BASE_URL'.",
+	"source": "ts",
+	"startLineNumber": 48,
+	"startColumn": 7,
+	"endLineNumber": 48,
+	"endColumn": 19,
+	"origin": "extHost1"
+},{
+	"resource": "/c:/birdstone/frontend/src/api/axios.js",
+	"owner": "typescript",
+	"code": "2451",
+	"severity": 8,
+	"message": "Cannot redeclare block-scoped variable 'api'.",
+	"source": "ts",
+	"startLineNumber": 52,
+	"startColumn": 7,
+	"endLineNumber": 52,
+	"endColumn": 10,
+	"origin": "extHost1"
+},{
+	"resource": "/c:/birdstone/frontend/src/api/axios.js",
+	"owner": "typescript",
+	"code": "8010",
+	"severity": 8,
+	"message": "Type annotations can only be used in TypeScript files.",
+	"source": "ts",
+	"startLineNumber": 52,
+	"startColumn": 12,
+	"endLineNumber": 52,
+	"endColumn": 25,
+	"origin": "extHost1"
+},{
+	"resource": "/c:/birdstone/frontend/src/api/axios.js",
+	"owner": "typescript",
+	"code": "8010",
+	"severity": 8,
+	"message": "Type annotations can only be used in TypeScript files.",
+	"source": "ts",
+	"startLineNumber": 76,
+	"startColumn": 14,
+	"endLineNumber": 76,
+	"endColumn": 27,
+	"origin": "extHost1"
+},{
+	"resource": "/c:/birdstone/frontend/src/api/axios.js",
+	"owner": "typescript",
+	"code": "8010",
+	"severity": 8,
+	"message": "Type annotations can only be used in TypeScript files.",
+	"source": "ts",
+	"startLineNumber": 77,
+	"startColumn": 11,
+	"endLineNumber": 77,
+	"endColumn": 21,
+	"origin": "extHost1"
+},{
+	"resource": "/c:/birdstone/frontend/src/api/axios.js",
+	"owner": "typescript",
+	"code": "2528",
+	"severity": 8,
+	"message": "A module cannot have multiple default exports.",
+	"source": "ts",
+	"startLineNumber": 86,
+	"startColumn": 16,
+	"endLineNumber": 86,
+	"endColumn": 19,
+	"relatedInformation": [
+		{
+			"startLineNumber": 43,
+			"startColumn": 16,
+			"endLineNumber": 43,
+			"endColumn": 19,
+			"message": "The first export default is here.",
+			"resource": "/c:/birdstone/frontend/src/api/axios.js"
+		}
+	],
+	"origin": "extHost1"
+},{
+	"resource": "/c:/birdstone/frontend/src/pages/AccountPage.tsx",
+	"owner": "typescript",
+	"code": "7016",
+	"severity": 8,
+	"message": "Could not find a declaration file for module '../api/axios'. 'c:/birdstone/frontend/src/api/axios.js' implicitly has an 'any' type.",
+	"source": "ts",
+	"startLineNumber": 6,
+	"startColumn": 17,
+	"endLineNumber": 6,
+	"endColumn": 31,
+	"origin": "extHost1"
+},{
+	"resource": "/c:/birdstone/frontend/src/pages/AccountPage.tsx",
+	"owner": "typescript",
+	"code": "6133",
+	"severity": 4,
+	"message": "'user' is declared but its value is never read.",
+	"source": "ts",
+	"startLineNumber": 18,
+	"startColumn": 9,
+	"endLineNumber": 18,
+	"endColumn": 17,
+	"tags": [
+		1
+	],
+	"origin": "extHost1"
+}]

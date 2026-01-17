@@ -1,0 +1,234 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Aura Quant - Futuristic Quantitative Trading Platform Design System 
+Ultra-modern tech aesthetic with neon accents and cyberpunk vibes.
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 220 15% 3%;
+    --foreground: 180 100% 90%;
+
+    --card: 220 20% 5%;
+    --card-foreground: 180 100% 90%;
+
+    --popover: 220 20% 5%;
+    --popover-foreground: 180 100% 90%;
+
+    --primary: 180 100% 70%;
+    --primary-foreground: 220 15% 3%;
+
+    --secondary: 220 25% 8%;
+    --secondary-foreground: 180 100% 90%;
+
+    --muted: 220 20% 12%;
+    --muted-foreground: 180 30% 65%;
+
+    --accent: 280 100% 70%;
+    --accent-foreground: 220 15% 3%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 180 100% 90%;
+
+    --border: 220 25% 15%;
+    --input: 220 25% 8%;
+    --ring: 180 100% 70%;
+
+    --radius: 0.5rem;
+
+    /* Futuristic Quant Design Tokens */
+    --neon-cyan: 180 100% 70%;
+    --neon-purple: 280 100% 70%;
+    --neon-blue: 220 100% 70%;
+    --electric-green: 120 100% 50%;
+    --matrix-green: 120 100% 40%;
+    --accent-modern: 180 100% 80%;
+    --accent-dim: 180 50% 45%;
+    --glass-bg: 220 20% 5% / 0.85;
+    --success-green: 120 100% 50%;
+    
+    /* Futuristic Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(180 100% 70%), hsl(280 100% 70%));
+    --gradient-hero: radial-gradient(ellipse at center, hsl(220 20% 5%) 0%, hsl(220 15% 3%) 100%);
+    --gradient-card: linear-gradient(145deg, hsl(220 25% 8%), hsl(220 20% 5%));
+    --gradient-neon: linear-gradient(90deg, hsl(180 100% 70%), hsl(280 100% 70%), hsl(220 100% 70%));
+    --gradient-matrix: linear-gradient(180deg, hsl(120 100% 40%) 0%, transparent 100%);
+    
+    /* Advanced Shadows & Glows */
+    --shadow-modern: 0 8px 32px hsl(180 100% 70% / 0.2);
+    --shadow-card: 0 8px 32px hsl(220 25% 8% / 0.6);
+    --glow-neon: 0 0 20px hsl(180 100% 70% / 0.5), 0 0 40px hsl(180 100% 70% / 0.3);
+    --glow-purple: 0 0 20px hsl(280 100% 70% / 0.5), 0 0 40px hsl(280 100% 70% / 0.3);
+    
+    /* Animations */
+    --transition-all: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-bounce: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+
+    --sidebar-background: 180 100% 90%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 180 100% 90%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    /* Inherits light theme values - platform is primarily dark */
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground overflow-x-hidden;
+    background: var(--gradient-hero);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    @apply bg-background;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    @apply bg-primary rounded-full;
+  }
+
+  /* Futuristic Quant Effects */
+  .glow-modern {
+    box-shadow: var(--shadow-modern);
+  }
+
+  .glow-neon {
+    box-shadow: var(--glow-neon);
+  }
+
+  .glow-purple {
+    box-shadow: var(--glow-purple);
+  }
+
+  .text-highlight {
+    color: hsl(var(--neon-cyan));
+  }
+
+  .text-gradient {
+    background: var(--gradient-neon);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .text-matrix {
+    color: hsl(var(--matrix-green));
+    text-shadow: 0 0 10px hsl(var(--matrix-green) / 0.8);
+  }
+
+  .border-glow {
+    border: 1px solid hsl(var(--neon-cyan) / 0.3);
+    box-shadow: inset 0 0 10px hsl(var(--neon-cyan) / 0.1);
+  }
+
+  .tech-grid {
+    background-image: 
+      linear-gradient(hsl(var(--neon-cyan) / 0.1) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--neon-cyan) / 0.1) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+
+  .cyber-grid {
+    background-image:
+      radial-gradient(circle at 1px 1px, hsl(var(--neon-cyan) / 0.15) 1px, transparent 0);
+    background-size: 20px 20px;
+  }
+
+  .animated-border {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .animated-border::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, hsl(var(--primary) / 0.4), transparent);
+    animation: border-scan 2s linear infinite;
+  }
+
+  @keyframes border-scan {
+    0% {
+      left: -100%;
+    }
+    100% {
+      left: 100%;
+    }
+  }
+
+  .holographic {
+    background: linear-gradient(45deg,
+      hsl(var(--primary) / 0.1) 0%,
+      hsl(var(--accent) / 0.1) 25%,
+      hsl(var(--neon-blue) / 0.1) 50%,
+      hsl(var(--neon-purple) / 0.1) 75%,
+      hsl(var(--primary) / 0.1) 100%);
+    background-size: 400% 400%;
+    animation: holographic-shift 3s ease infinite;
+  }
+
+  @keyframes holographic-shift {
+    0%, 100% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+  }
+
+  .neural-network {
+    background-image:
+      radial-gradient(2px 2px at 20px 30px, hsl(var(--neon-cyan) / 0.3), transparent),
+      radial-gradient(2px 2px at 40px 70px, hsl(var(--neon-purple) / 0.3), transparent),
+      radial-gradient(1px 1px at 90px 40px, hsl(var(--accent) / 0.3), transparent);
+    background-repeat: repeat;
+    background-size: 100px 100px;
+    animation: neural-pulse 4s ease-in-out infinite;
+  }
+
+  @keyframes neural-pulse {
+    0%, 100% {
+      opacity: 0.3;
+    }
+    50% {
+      opacity: 0.8;
+    }
+  }
+
+  /* Scan animation for AR effect */
+  @keyframes scan {
+    0% { top: 0%; opacity: 1; }
+    50% { opacity: 0.8; }
+    100% { top: 100%; opacity: 0; }
+  }
+
+  .animate-scan {
+    animation: scan 3s ease-in-out infinite;
+  }
+
+  .animate-spin-slow {
+    animation: spin 8s linear infinite;
+  }
+}

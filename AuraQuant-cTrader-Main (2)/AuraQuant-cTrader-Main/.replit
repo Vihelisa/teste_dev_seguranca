@@ -1,0 +1,90 @@
+modules = ["nodejs-20", "web", "python-3.12"]
+run = "python manage.py runserver 0.0.0.0:5000"
+
+[nix]
+channel = "stable-24_05"
+packages = ["cargo", "glibcLocales", "libiconv", "libxcrypt", "openssl", "pkg-config", "rustc"]
+
+[deployment]
+deploymentTarget = "cloudrun"
+run = ["sh", "-c", "python manage.py collectstatic --noinput && python manage.py migrate && waitress-serve --port=8080 core.wsgi:application"]
+
+[workflows]
+runButton = "Install Dependencies and Run Backend"
+
+[[workflows.workflow]]
+name = "Frontend Dev"
+author = 45703045
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd frontend && npm install && npm run dev"
+
+[[workflows.workflow]]
+name = "Full Stack Dev"
+author = 45703045
+mode = "parallel"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python manage.py migrate && python manage.py runserver 0.0.0.0:5000"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd frontend && npm install && npm run dev"
+
+[[workflows.workflow]]
+name = "Debug Full Stack"
+author = 45703045
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python manage.py collectstatic --noinput"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python manage.py migrate"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python manage.py runserver 0.0.0.0:5000"
+
+[[workflows.workflow]]
+name = "Backend Only"
+author = 45703045
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python manage.py migrate"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python manage.py runserver 0.0.0.0:5000"
+
+[[workflows.workflow]]
+name = "Install Dependencies and Run Backend"
+author = 45703045
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pip install -r requirements.txt"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python manage.py migrate"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python manage.py runserver 0.0.0.0:5000"
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[[ports]]
+localPort = 5173
+externalPort = 3000

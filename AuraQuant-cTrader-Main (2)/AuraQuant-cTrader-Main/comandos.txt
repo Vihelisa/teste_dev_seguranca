@@ -1,0 +1,154 @@
+
+
+Se você estiver rodando tudo na sua máquina local.
+
+1.  **Atualizar o Frontend:**
+    *   **Pare o servidor de desenvolvimento:** No terminal onde `npm start` está rodando, pressione `Ctrl+C`.
+    *   **Reinstale as dependências (boa prática):** Na pasta `frontend/`, execute:
+        ```bash
+        npm install 
+        ```
+        Isso garante que todas as bibliotecas estejam alinhadas.
+    *   **Reinicie o servidor de desenvolvimento:**
+        ```bash
+        npm start
+        ```
+
+2.  **Atualizar o Backend:**
+    *   **Aplique as Migrações:** Como alteramos `models.py`, este passo é obrigatório. No terminal na raiz do projeto (`C:\birdstone\`), execute:
+        ```bash
+        python manage.py makemigrations robots
+        python manage.py migrate
+        ```
+    *   **Reinicie o servidor Django:** Pare o `runserver` (com `Ctrl+C`) e inicie-o novamente:
+        ```bash
+        python manage.py runserver
+        ```
+
+3.  **Atualizar os Workers Celery:**
+    *   **Pare os workers:** Nos terminais onde o `celery beat` e o `celery worker` estão rodando, pressione `Ctrl+C`.
+    *   **Reinicie os workers:**
+        ```bash
+        # Em um terminal
+        celery -A core beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+        
+        # Em outro terminal
+        celery -A core worker -l info -Q realtime_trading --pool=solo
+        ```
+
+---
+
+**Ambiente de Produção (VPS):**
+
+Se você estiver aplicando as mudanças diretamente na sua VPS.
+
+1.  **Sincronizar o Código:**
+    *   Na sua máquina local, faça o commit e o push das alterações para o GitHub.
+    *   Na VPS, na pasta `C:\birdstone\`, puxe as últimas alterações:
+        ```powershell
+        git pull
+        ```
+
+2.  **Atualizar o Frontend (Build de Produção):**
+    *   Navegue até a pasta do frontend e crie o build de produção:
+        ```powershell
+        cd C:\birdstone\frontend
+        npm run build
+        cd .. 
+        ```
+
+3.  **Atualizar o Backend (Banco de Dados e Arquivos Estáticos):**
+    *   Ative o ambiente: `conda activate projeto_trader_env`
+    *   Aplique as migrações:
+        ```powershell
+        python manage.py migrate
+        ```
+    *   Colete os novos arquivos estáticos do build:
+        ```powershell
+        python manage.py collectstatic --noinput
+        ```
+        python manage.py runserver 0.0.0.0:8000
+
+4.  **Reiniciar Todos os Serviços (Passo CRÍTICO):**
+    *   Use os comandos `nssm` para reiniciar todos os componentes do backend. **Abra o PowerShell como Administrador**.
+        ```powershell
+        # Reinicia o servidor web
+        nssm restart Caddy 
+        
+        # Reinicia o servidor de aplicação Django
+        nssm restart birdstone-backend
+        nssm restart birdstone-trading-worker
+        nssm restart birdstone-backtest-worker
+        nssm restart birdstone-beat-scheduler
+        nssm restart Caddy 
+Dossiê de Comandos da Plataforma Birdstone
+Este documento centraliza todos os comandos essenciais para o desenvolvimento, implantação, manutenção e depuração da plataforma.
+1. Comandos do Git (Controle de Versão)
+O Git é o nosso sistema de controle de versão. Ele rastreia todas as alterações no código-fonte.
+git pull origin main
+Função: Baixa e mescla as alterações mais recentes da branch main do repositório remoto (GitHub) para a sua cópia local. Este é o comando padrão para atualizar seu código.
+git fetch origin
+Função: Baixa as informações mais recentes do repositório remoto, mas não as aplica aos seus arquivos. Útil para ver o que mudou antes de fazer o pull ou reset.
+git reset --hard origin/main
+Função (Ação Destrutiva): Força a sua cópia local a se tornar um espelho exato da branch main do GitHub, deletando permanentemente quaisquer alterações locais não salvas. Use para "limpar" uma VPS e garantir que ela tenha o código de produção exato.
+git status
+Função: Mostra o estado atual do seu repositório local: quais arquivos foram modificados, quais são novos (untracked) e quais estão prontos para o commit. É o seu principal comando de diagnóstico.
+git add .
+Função: Adiciona todas as alterações e novos arquivos ao "stage", que é a área de preparação para o próximo commit.
+git commit -m "ASSUNTO: Descrição da mudança"
+Função: Cria um "snapshot" (um ponto de salvamento permanente) das alterações que foram adicionadas com git add. A mensagem (-m) é crucial para o histórico. Usamos prefixos como FEAT: (nova funcionalidade), FIX: (correção de bug), CHORE: (manutenção).
+git push origin main
+Função: Envia os seus commits locais (os "snapshots" que você criou) para o repositório remoto no GitHub, compartilhando suas alterações com a equipe.
+git clean -f -d
+Função (Ação Destrutiva): Remove todos os arquivos e diretórios não rastreados que não estão no .gitignore. Útil após um git reset --hard para garantir uma limpeza completa.
+2. Comandos do Frontend (NPM & React)
+O NPM (Node Package Manager) gerencia as dependências e os scripts do nosso frontend em React.
+npm install
+Função: Lê o arquivo package.json e baixa/instala todas as bibliotecas de frontend necessárias (React, Material-UI, Axios, etc.) na pasta node_modules. Essencial após clonar o projeto ou após um git pull que alterou as dependências.
+npm start
+Função (Apenas Desenvolvimento): Inicia o servidor de desenvolvimento do React. Ele monitora as alterações nos arquivos em tempo real, recarrega o navegador automaticamente e fornece mensagens de erro detalhadas.
+npm run build
+Função (Apenas Produção): Compila e otimiza todo o código do frontend (JavaScript, CSS) em um pequeno conjunto de arquivos estáticos, colocando-os na pasta frontend/build (ou dist). Este é o comando que prepara o frontend para ser implantado na VPS.
+3. Comandos do Backend (Django)
+Estes comandos são executados via manage.py e controlam a aplicação Django.
+python manage.py runserver
+Função (Apenas Desenvolvimento): Inicia o servidor de desenvolvimento do Django. É ideal para depuração, pois mostra tracebacks de erro detalhados diretamente no terminal.
+python manage.py runserver 0.0.0.0:8000 --nothreading
+Função (Depuração Avançada): Inicia o servidor de desenvolvimento em modo de thread única. Útil para diagnosticar bugs que só ocorrem com múltiplas requisições simultâneas (problemas de "race condition" ou com bibliotecas não "thread-safe").
+python manage.py makemigrations robots
+Função: Compara as definições no seu arquivo robots/models.py com o estado atual do banco de dados e cria um "arquivo de migração" (um script Python) que descreve as alterações necessárias (ex: criar uma nova tabela, adicionar uma coluna).
+python manage.py migrate
+Função: Executa os arquivos de migração que ainda não foram aplicados, alterando efetivamente a estrutura do seu banco de dados para corresponder ao seu models.py.
+python manage.py collectstatic --noinput
+Função (Apenas Produção): Coleta todos os arquivos estáticos de todos os lugares do projeto (do admin do Django, dos apps e, crucialmente, da pasta frontend/build/static) e os copia para um único local (staticfiles/), de onde o WhiteNoise pode servi-los em produção. O --noinput previne que ele peça confirmação.
+4. Comandos do Celery (Workers & Scheduler)
+O Celery gerencia nossas tarefas em segundo plano, como a análise de mercado e os backtests.
+celery -A core worker -l info -Q realtime_trading --pool=solo
+Função (Depuração): Inicia manualmente um worker que escuta apenas na fila de trading em tempo real. Mostra todos os logs ao vivo no terminal.
+celery -A core worker -l info -Q backtesting_heavy --pool=solo
+Função (Depuração): Inicia manualmente um worker que escuta apenas na fila de backtesting.
+celery -A core beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+Função (Depuração): Inicia manualmente o "coração" (scheduler) do Celery, que enfileira as tarefas periódicas (como o monitor_active_instances).
+5. Comandos de Serviço (NSSM & Waitress)
+Estes comandos gerenciam os processos do nosso backend como serviços persistentes do Windows em produção.
+waitress-serve --host=127.0.0.1 --port=8000 core.wsgi:application
+Função (Depuração): Inicia o servidor de aplicação Waitress manualmente, da mesma forma que o NSSM o faz. Útil para ver os logs do Waitress ao vivo, embora o runserver seja geralmente melhor para depuração.
+nssm status <nome-do-serviço>
+Função: Verifica se um serviço está rodando (SERVICE_RUNNING) ou parado (SERVICE_STOPPED). Ex: nssm status birdstone-backend.
+nssm start <nome-do-serviço>
+Função: Inicia um serviço que está parado.
+nssm stop <nome-do-serviço>
+Função: Para um serviço que está rodando.
+nssm restart <nome-do-serviço>
+Função: O comando mais usado. Para e inicia um serviço, forçando-o a carregar qualquer alteração de código ou configuração. Essencial após um git pull em produção.
+# 1. Crie uma nova branch e mude para ela
+git checkout -b fix/login-csrf-issue
+
+# 2. Adicione suas alterações
+git add .
+
+# 3. Crie o commit
+git commit -m "FIX: Adiciona decorador para resolver erro 403 no login"
+
+# 4. Envie a nova branch para o GitHub
+git push -u origin fix/login-csrf-issue
