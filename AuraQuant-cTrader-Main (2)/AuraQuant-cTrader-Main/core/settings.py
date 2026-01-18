@@ -174,13 +174,13 @@ CELERY_TASK_ROUTES = {
 
 # Performance e Segurança
 CELERY_TASK_TRACK_STARTED = True
-CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutos
+CELERY_TASK_TIME_LIMIT = 30 * 60  # Evita que uma task trave eternamente. -> 30 minutos
 CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutos
 CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000  # Reinicia worker após 1000 tasks
-CELERY_WORKER_PREFETCH_MULTIPLIER = 1  # Para tasks de trading (não pegar múltiplas)
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1  # configurações importantes para trading: Em trading, você quer processar uma ordem por vez, não pegar 4 ordens de uma vez (pode causar problemas de timing).
 
 # Retry
-CELERY_TASK_ACKS_LATE = True  # Confirma task só depois de completar
+CELERY_TASK_ACKS_LATE = True  # Confirma task só depois de completar: Se o worker morrer no meio, a task volta pra fila.
 CELERY_TASK_REJECT_ON_WORKER_LOST = True  # Re-executa se worker morrer
 
 # Logs
