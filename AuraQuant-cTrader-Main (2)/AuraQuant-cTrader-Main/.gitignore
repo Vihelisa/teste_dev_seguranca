@@ -1,55 +1,37 @@
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Django
-db.sqlite3
-/staticfiles/
-/media/
-
-# Environment
-.env*
-.venv
+# Ambiente
+.env
+.env.local
+.env.*.local
 venv/
 env/
 
-# IDE / Editor
+# Django
+*.log
+*.pot
+*.pyc
+__pycache__/
+db.sqlite3
+db.sqlite3-journal
+media/
+staticfiles/
+
+# Python
+*.py[cod]
+*$py.class
+.Python
+
+# IDEs
 .vscode/
 .idea/
 *.swp
-*.swo
-
-# Logs
-logs/
-*.log
-
-# Notebooks
-.ipynb_checkpoints/
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Dependências e Artefatos do Python
-__pycache__/
-*.pyc
-/staticfiles/
-/media/
-db.sqlite3
-
-# Dependências do Frontend
-/frontend/node_modules/
-/frontend/build/
-/frontend/.pnp.js
+# Node
 node_modules/
+npm-debug.log
 
-# Arquivos de Ambiente e IDE
-.env
-.vscode/
-
-# Frontend Build Artifacts
-frontend/dist/
-frontend_dist/
-backend/frontend_dist/
+# Docker
+docker-compose.override.yml

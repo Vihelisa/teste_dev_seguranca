@@ -1,8 +1,11 @@
 import os
-from pathlib import Path
-import dj_database_url
-from decouple import config, Csv
+
 from kombu import Queue
+from pathlib import Path
+from decouple import config, Csv
+from cryptography.fernet import Fernet
+
+
 
 # =============================================================================
 #           1. CONFIGURAÇÕES BASE E DE SEGURANÇA
@@ -10,13 +13,17 @@ from kombu import Queue
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Decouple lê as variáveis do arquivo .env na raiz do projeto
-SECRET_KEY = config('SECRET_KEY', default='django-insecure-fallback-key-for-dev')
-DEBUG = config('DEBUG', default=True, cast=bool)
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = config('SECRET_KEY')
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = config('DEBUG', default=False, cast=bool)
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=Csv())
+
+
 
 # Lógica de Criptografia Centralizada e "Fail-Fast"
 ENCRYPTION_KEY = config('ENCRYPTION_KEY', default='__a_default_key_for_dev_must_be_32_bytes__')
 try:
-    from cryptography.fernet import Fernet
     FERNET = Fernet(ENCRYPTION_KEY.encode())
 except Exception as e:
     print(f"ERRO CRÍTICO ao inicializar a criptografia: {e}. A aplicação não pode iniciar de forma segura.")
@@ -69,10 +76,17 @@ TEMPLATES = [{'BACKEND': 'django.template.backends.django.DjangoTemplates','DIRS
 # =============================================================================
 #           6. BANCO DE DADOS E CACHE
 # =============================================================================
-if DEBUG:
-    DATABASES = {'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': BASE_DIR / 'db.sqlite3'}}
-else:
-    DATABASES = {'default': config('DATABASE_URL', cast=dj_database_url.parse)}
+DATABASES = {
+    'default': {
+        'ENGINE': config('DB_ENGINE'),
+        'NAME': config('DB_NAME'),
+        'USER': config('DB_USER'),
+        'PASSWORD': config('DB_PASSWORD'),
+        'HOST': config('DB_HOST'),
+        'PORT': config('DB_PORT', cast=int),
+    }
+}
+
 CACHES = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache', 'LOCATION': 'birdstone-cache'}}
 
 # =============================================================================
@@ -126,12 +140,30 @@ REST_FRAMEWORK = {
 AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',
 ]
-CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://localhost:6379/0')
-CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='redis://localhost:6379/0')
-CELERY_ACCEPT_CONTENT = ['json']; CELERY_TASK_SERIALIZER = 'json'; CELERY_RESULT_SERIALIZER = 'json'
-CELERY_TIMEZONE = config('TIME_ZONE', default='America/Sao_Paulo'); TIME_ZONE = CELERY_TIMEZONE
+
+# Broker e Backend
+CELERY_BROKER_URL = config('REDIS_URL')
+CELERY_RESULT_BACKEND = config('REDIS_URL')
+
+# Serialização
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+
+# Timezone
+CELERY_TIMEZONE = config('TIME_ZONE', default='America/Sao_Paulo')
+TIME_ZONE = CELERY_TIMEZONE
+
+# Beat Scheduler (Tarefas Agendadas)
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
-CELERY_TASK_QUEUES = [Queue('realtime_trading', routing_key='trading.#'), Queue('backtesting_heavy', routing_key='backtest.#'),]
+
+# Filas Personalizadas
+CELERY_TASK_QUEUES = [
+    Queue('realtime_trading', routing_key='trading.#'),
+    Queue('backtesting_heavy', routing_key='backtest.#'),
+]
+
+# Roteamento de Tasks
 CELERY_TASK_ROUTES = {
     'trading_platform.tasks.monitor_robot_instance_task': {'queue': 'realtime_trading'},
     'trading_platform.tasks.process_single_instance': {'queue': 'realtime_trading'},
@@ -139,6 +171,21 @@ CELERY_TASK_ROUTES = {
     'trading_platform.tasks.close_positions_task': {'queue': 'realtime_trading'},
     'trading_platform.tasks.run_validation_task': {'queue': 'backtesting_heavy'},
 }
+
+# Performance e Segurança
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutos
+CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutos
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000  # Reinicia worker após 1000 tasks
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1  # Para tasks de trading (não pegar múltiplas)
+
+# Retry
+CELERY_TASK_ACKS_LATE = True  # Confirma task só depois de completar
+CELERY_TASK_REJECT_ON_WORKER_LOST = True  # Re-executa se worker morrer
+
+# Logs
+CELERY_WORKER_HIJACK_ROOT_LOGGER = False
+CELERY_WORKER_LOG_FORMAT = '[%(asctime)s: %(levelname)s/%(processName)s] %(message)s'
 
 # =============================================================================
 #           10. EMAIL (PARA RESET DE SENHA)
@@ -155,4 +202,4 @@ DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='Birdstone <nao-respon
 #           11. LOGGING E OUTROS
 # =============================================================================
 AUTH_PASSWORD_VALIDATORS = [{'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},{'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator', 'OPTIONS': {'min_length': 8}},{'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},{'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},]
-LOGGING = {'version': 1,'disable_existing_loggers': False,'formatters': {'verbose': {'format': '{levelname} {asctime} {module} {message}','style': '{',},},'handlers': {'console': {'class': 'logging.StreamHandler', 'formatter': 'verbose'},},'root': {'handlers': ['console'], 'level': 'INFO'},'loggers': {'trading_platform': {'handlers': ['console'], 'level': 'DEBUG' if DEBUG else 'INFO', 'propagate': False,},}
+LOGGING = {'version': 1,'disable_existing_loggers': False,'formatters': {'verbose': {'format': '{levelname} {asctime} {module} {message}','style': '{',},},'handlers': {'console': {'class': 'logging.StreamHandler', 'formatter': 'verbose'},},'root': {'handlers': ['console'], 'level': 'INFO'},'loggers': {'trading_platform': {'handlers': ['console'], 'level': 'DEBUG' if DEBUG else 'INFO', 'propagate': False,},}}

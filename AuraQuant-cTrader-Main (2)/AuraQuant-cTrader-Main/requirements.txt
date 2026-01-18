@@ -1,40 +1,37 @@
-# Arquivo: requirements.txt
-# Versão: 1.2 - Auditada
-
-# Core Django & API
-Django==4.2.13
-djangorestframework==3.15.1
-dj-database-url==2.1.0
+amqp==5.3.1
+asgiref==3.11.0
+billiard==4.2.4
+celery==5.6.2
+channels==4.3.2
+channels_redis==4.3.0
+click==8.3.1
+click-didyoumean==0.3.1
+click-plugins==1.1.1.2
+click-repl==0.3.0
+colorama==0.4.6
+Django==5.0
+django-cors-headers==4.9.0
+djangorestframework==3.16.1
+joblib==1.5.3
+kombu==5.6.2
+metatrader5==5.0.5488
+msgpack==1.1.2
+numpy==2.4.1
+packaging==25.0
+pandas==2.3.3
+prompt_toolkit==3.0.52
+psycopg2-binary==2.9.11
+python-dateutil==2.9.0.post0
 python-decouple==3.8
-psycopg2-binary==2.9.9
-django-cors-headers==4.6.0
-
-# Servidor de Aplicação & Arquivos Estáticos
-gunicorn==22.0.0
-waitress==3.0.0
-whitenoise==6.7.0
-
-# Tarefas Assíncronas (Celery)
-celery==5.4.0
-kombu==5.4.0
-redis==5.0.4
-django-celery-beat==2.6.0
-
-# Motor Quantitativo e Análise de Dados
-# MetaTrader5 # Comentado pois não está disponível em todos os ambientes (ex: Linux)
-pandas==1.5.3
-numpy # Removido pin de versão para resolver conflitos
-scikit-learn==1.5.0
-xgboost==2.0.3
-optuna==3.6.1
-# pandas-ta foi removido temporariamente para resolver um conflito de dependência insolúvel.
-
-# Serviços de IA
-openai==1.35.3
-
-# Segurança
-cryptography==42.0.8
-
-# Utilidades
-pytz
-simplefix==1.0.15
+pytz==2025.2
+redis==7.1.0
+scikit-learn==1.8.0
+scipy==1.17.0
+six==1.17.0
+sqlparse==0.5.5
+threadpoolctl==3.6.0
+tzdata==2025.3
+tzlocal==5.3.1
+vine==5.1.0
+wcwidth==0.2.14
+xgboost==3.1.3
