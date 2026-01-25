@@ -26,8 +26,12 @@ class UserProfile(models.Model):
         help_text="Limite de Drawdown Diário Global (%). Se atingido, todos os robôs são pausados."
     )
     max_open_positions = models.IntegerField(default=5, help_text="Número máximo de posições abertas simultaneamente em todas as contas.")
-    max_risk_per_trade = models.FloatField(default=1.0, help_text="Risco máximo por trade, como uma porcentagem do saldo da conta (ex: 1.0 para 1%).")
-
+    max_risk_per_trade = models.DecimalField(
+        max_digits=5,           # Permite até 999.99
+        decimal_places=2,       # Duas casas decimais
+        default=Decimal('1.00'),
+        help_text="Risco máximo por trade, como uma porcentagem do saldo da conta (ex: 1.00 para 1%)."
+    )
 
     def __str__(self):
         return f"Perfil de {self.user.username}"
@@ -111,8 +115,12 @@ class ActiveRobotInstance(models.Model):
     # Configuração de Risco
     risk_mode = models.CharField(max_length=10, choices=RISK_MODES, default='FIXED', help_text="Modo de cálculo do tamanho da posição.")
     lot_size = models.DecimalField(max_digits=10, decimal_places=2, help_text="Lote fixo a ser usado nas operações (se risk_mode for FIXED).", validators=[MinValueValidator(Decimal('0.01'))])
-    risk_percent = models.FloatField(default=1.0, help_text="Porcentagem do saldo a arriscar por trade (se risk_mode for DYNAMIC). Ex: 1.0 = 1%.")
-
+    risk_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal('1.00'),
+        help_text="Porcentagem do saldo a arriscar por trade (se risk_mode for DYNAMIC). Ex: 1.00 = 1%."
+    )
     is_active = models.BooleanField(default=True, db_index=True) # Indexado para buscas rápidas pelo worker
     started_at = models.DateTimeField(auto_now_add=True)
 
