@@ -161,3 +161,11 @@ cython_debug/
 
 # Snyk Security Extension - AI Rules (auto-generated)
 .github/instructions/snyk_rules.instructions.md
+
+# Logs
+logs/*.log
+logs/*.log.*
+*.log
+
+# Mas mantenha a pasta logs/
+!logs/.gitkeep

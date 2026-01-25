@@ -35,3 +35,11 @@ npm-debug.log
 
 # Docker
 docker-compose.override.yml
+
+# Logs
+logs/*.log
+logs/*.log.*
+*.log
+
+# Mas mantenha a pasta logs/
+!logs/.gitkeep

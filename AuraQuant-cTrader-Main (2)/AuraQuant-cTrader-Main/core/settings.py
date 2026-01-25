@@ -17,18 +17,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = config('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=False, cast=bool)
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=Csv())
 
 
 
 # Lógica de Criptografia Centralizada e "Fail-Fast"
-ENCRYPTION_KEY = config('ENCRYPTION_KEY', default='__a_default_key_for_dev_must_be_32_bytes__')
+# Não use default para chaves de criptografia, pois podem ser descriptografadas por qualquer um!
+#E em produção todos os dados sensíveis estão comprometidos
+ENCRYPTION_KEY = config('ENCRYPTION_KEY')  # ← SEM default!
+
 try:
+    if len(ENCRYPTION_KEY) != 44:  # Chave Fernet base64 tem 44 caracteres
+        raise ValueError("ENCRYPTION_KEY deve ter 44 caracteres (base64 de 32 bytes)")
     FERNET = Fernet(ENCRYPTION_KEY.encode())
 except Exception as e:
-    print(f"ERRO CRÍTICO ao inicializar a criptografia: {e}. A aplicação não pode iniciar de forma segura.")
+    print(f"ERRO CRÍTICO ao inicializar a criptografia: {e}")
     raise e
-
 # =============================================================================
 #           2. CONFIGURAÇÕES DA APLICAÇÃO
 # =============================================================================
@@ -87,7 +90,17 @@ DATABASES = {
     }
 }
 
-CACHES = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache', 'LOCATION': 'birdstone-cache'}}
+CACHES = {
+    'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': config('REDIS_URL'),
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+        },
+        'KEY_PREFIX': 'birdstone',
+        'TIMEOUT': 300,  # 5 minutos
+    }
+}
 
 # =============================================================================
 #           7. ARQUIVOS ESTÁTICOS E DE MÍDIA
@@ -102,9 +115,7 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 # =============================================================================
 #           8. CONFIGURAÇÕES DE REDE E SEGURANÇA
 # =============================================================================
-production_hosts = config('ALLOWED_HOSTS', default='', cast=Csv())
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
-ALLOWED_HOSTS.extend(production_hosts)
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=Csv())
 
 if DEBUG:
     CORS_ALLOW_ALL_ORIGINS = True
@@ -202,4 +213,85 @@ DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='Birdstone <nao-respon
 #           11. LOGGING E OUTROS
 # =============================================================================
 AUTH_PASSWORD_VALIDATORS = [{'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},{'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator', 'OPTIONS': {'min_length': 8}},{'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},{'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},]
-LOGGING = {'version': 1,'disable_existing_loggers': False,'formatters': {'verbose': {'format': '{levelname} {asctime} {module} {message}','style': '{',},},'handlers': {'console': {'class': 'logging.StreamHandler', 'formatter': 'verbose'},},'root': {'handlers': ['console'], 'level': 'INFO'},'loggers': {'trading_platform': {'handlers': ['console'], 'level': 'DEBUG' if DEBUG else 'INFO', 'propagate': False,},}}
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+        'file_trading': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs', 'trading.log'),
+            'maxBytes': 1024 * 1024 * 10,  # 10 MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'trading_platform': {
+            'handlers': ['console', 'file_trading'],
+            'level': 'DEBUG' if DEBUG else 'INFO',
+            'propagate': False,
+        },
+        'celery': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}
+
+# =============================================================================
+#           12. CHANNELS (WEBSOCKETS)
+#  configura Django Channels para WebSockets em tempo real.
+# =============================================================================
+
+ASGI_APPLICATION = 'core.asgi.application'
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [config('REDIS_URL')],
+        },
+    },
+}
+
+
+# =============================================================================
+#           13. HEADERS DE SEGURANÇA
+# =============================================================================
+
+if not DEBUG:
+    # Força HTTPS
+    SECURE_SSL_REDIRECT = True
+    
+    # HSTS (HTTP Strict Transport Security)
+    SECURE_HSTS_SECONDS = 31536000  # 1 ano
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    
+    # Previne clickjacking
+    X_FRAME_OPTIONS = 'DENY'
+    
+    # Previne MIME sniffing
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    
+    # XSS Protection
+    SECURE_BROWSER_XSS_FILTER = True
