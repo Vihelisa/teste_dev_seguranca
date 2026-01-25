@@ -1,13 +1,15 @@
-from django.conf import settings
-from .models import TradingAccount, Notification, TradeLog, ActiveRobotInstance
 import logging
 import traceback
 import json
 import decimal
 import numpy as np
 import pandas as pd
+
+from decimal import Decimal
 from datetime import datetime
 from django.contrib.auth.models import User
+from django.conf import settings
+from .models import TradingAccount, Notification, TradeLog, ActiveRobotInstance
 
 # Handle optional MetaTrader5 import for non-Windows environments
 try:
@@ -126,8 +128,9 @@ def execute_trade_from_signal(instance: ActiveRobotInstance, signal_details: dic
             if account_info and account_info.balance > 0:
                 # Converte o lot_size (Decimal) para float para garantir a compatibilidade matemática
                 lot_size_float = float(instance.lot_size)
-                potential_loss = sl_distance_final * lot_size_float * symbol_info.trade_contract_size
-                risk_percent = (potential_loss / account_info.balance) * 100
+                potential_loss = Decimal(str(potential_loss))
+                balance = Decimal(str(account_info.balance))
+                risk_percent = (potential_loss / balance) * Decimal('100')
                 if risk_percent > user.profile.max_risk_per_trade:
                     logger.warning(f"[RISK_MG] Trade para {symbol} bloqueado. Risco ({risk_percent:.2f}%) excede o limite de {user.profile.max_risk_per_trade}%.")
                     return

@@ -1,8 +1,10 @@
 #core.py
 import logging
 import pandas as pd
+
 from django.conf import settings
 from django.core.cache import cache
+from decimal import Decimal
 
 from .. import trader_engine
 from . import data_processor
@@ -162,18 +164,19 @@ def analyze_and_get_signal(instance, StrategyContract, saved_ia, log_prefix):
         # So `analyze_and_get_signal` MUST return `quantity_in_lots`.
 
         # Calculating lots here:
-        quantity = float(instance.lot_size)
+        quantity = Decimal(str(instance.lot_size))
         if instance.risk_mode == 'DYNAMIC':
              # Need current balance. 'instance' has 'trading_account', but is it up to date?
              # tasks.py refreshes it. Here we might use the one on instance.
              # If we want to be safe, we can use the one from instance if available.
-             try:
-                 current_balance = float(instance.trading_account.current_balance)
-                 if current_balance > 0:
-                     risco_monetario = current_balance * (instance.risk_percent / 100.0)
-                     quantity = max(0.01, round(risco_monetario / 1000.0, 2))
-             except:
-                 pass # Fallback to fixed lot
+            try:
+                current_balance = Decimal(str(current_balance))
+                risk_percent = Decimal(str(instance.risk_percent))
+                if current_balance > 0:
+                    risco_monetario = current_balance * (risk_percent / Decimal('100.0'))
+                    quantity = max(0.01, round(risco_monetario / 1000.0, 2))
+            except:
+                pass # Fallback to fixed lot
 
         trade_request = {
             'symbol_id': assets[0] if strategy_obj.strategy_type != 'PAIRS' else assets, # tasks.py uses symbol_id
