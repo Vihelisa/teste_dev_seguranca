@@ -123,7 +123,8 @@ def analyze_and_get_signal(instance, StrategyContract, saved_ia, log_prefix):
     # O preço em tempo real para execução será obtido do feed FIX na tarefa.
     market_data = data_processor.prepare_data_for_assets(assets, dias=60, account=instance.trading_account)
     if market_data is None:
-        logger.info(f"{log_prefix} -> Dados de mercado insuficientes para análise."); return None
+        logger.info(f"{log_prefix} -> Dados de mercado insuficientes para análise.")
+        return None
 
     df_para_analise = None
     if strategy_obj.strategy_type == 'PAIRS':
@@ -137,7 +138,8 @@ def analyze_and_get_signal(instance, StrategyContract, saved_ia, log_prefix):
         params_key = asset_principal
 
     if df_para_analise is None:
-        logger.info(f"{log_prefix} -> DataFrame para análise está vazio ou nulo."); return None
+        logger.info(f"{log_prefix} -> DataFrame para análise está vazio ou nulo.")
+        return None
 
     params = strategy_obj.portfolio_composition.get(params_key, {})
     df_featured = StrategyContract.add_indicators(df_para_analise, params)
@@ -145,7 +147,8 @@ def analyze_and_get_signal(instance, StrategyContract, saved_ia, log_prefix):
     alert_candidate = df_featured.tail(1)
     alerts = StrategyContract.generate_alerts(alert_candidate, params)
     if alerts.empty:
-        logger.info(f"{log_prefix} -> Nenhuma condição de alerta encontrada."); return None
+        logger.info(f"{log_prefix} -> Nenhuma condição de alerta encontrada.")
+        return None
 
     logger.info(f"{log_prefix} ALERTA GERADO! Tipo: {alerts.iloc[0].get('tipo', 'N/A')} @ {alerts.iloc[0]['time_alerta']}.")
 
@@ -326,8 +329,6 @@ def analyze_and_get_signal(instance, StrategyContract, saved_ia, log_prefix):
                     # -----------------------------------------------------------------
                     # PASSO 11: REGISTRAR DETALHES DO CÁLCULO NO LOG
                     # -----------------------------------------------------------------
-                    
-                    
                     logger.info(
                         f"{log_prefix} DYNAMIC sizing calculado: "
                         f"Saldo={current_balance}, "
@@ -341,12 +342,12 @@ def analyze_and_get_signal(instance, StrategyContract, saved_ia, log_prefix):
                 # SE NÃO HÁ SALDO, USA LOTE FIXO COMO FALLBACK
                 # ---------------------------------------------------------------------
                 else:
+                    # Converte o lote fixo da instância para Decimal
+                    final_lot_size = Decimal(str(instance.lot_size))
                     logger.warning(
                         f"{log_prefix} Saldo da conta é zero ou negativo (${current_balance}). "
                         f"Usando lote fixo configurado."
-                    )
-                    # Converte o lote fixo da instância para Decimal
-                    final_lot_size = Decimal(str(instance.lot_size))
+                    )              
 
             # -------------------------------------------------------------------------
             # TRATAMENTO DE ERROS: SE QUALQUER COISA FALHAR, USA LOTE FIXO
@@ -364,9 +365,16 @@ def analyze_and_get_signal(instance, StrategyContract, saved_ia, log_prefix):
             'comment': f"BS-{strategy_obj.id}-{instance.id}",
             'side': trade_details['trade_type_str'],
             'quantity_in_lots': final_lot_size,
-            **trade_details
+            **trade_details # Inclui entry_price, sl_price, tp_price, etc
         }
         return trade_request
+    
+    # =========================================================================
+    # SE PROBABILIDADE < LIMIAR, REJEITA O SINAL
+    # =========================================================================
     else:
-        logger.info(f"{log_prefix} SINAL REPROVADO. Prob. ({best_decision['prediction_proba']:.2%}) < Limiar ({limiar_otimo:.2f}).")
-        return None
+        logger.info(
+            f"{log_prefix} SINAL REPROVADO. "
+            f"Prob. ({best_decision['prediction_proba']:.2%}) < Limiar ({limiar_otimo:.2f})."
+        )
+        return None  # ← RETORNA None se sinal foi reprovado
