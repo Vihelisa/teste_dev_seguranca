@@ -4,6 +4,8 @@ import json
 import decimal
 import numpy as np
 import pandas as pd
+import traceback  # Para logging detalhado de erros (se ainda não estiver importado)
+from decimal import Decimal, ROUND_HALF_UP  # Para cálculos financeiros precisos
 
 from decimal import Decimal
 from datetime import datetime
@@ -102,10 +104,16 @@ def execute_trade_from_signal(instance: ActiveRobotInstance, signal_details: dic
             tick = mt5_conn.symbol_info_tick(symbol)
             if not tick: raise ValueError(f"Não foi possível obter o tick para {symbol}")
 
+            # =========================================================================
+            # OBTER PREÇO ATUAL E INFORMAÇÕES DO SÍMBOLO
+            # =========================================================================
             trade_type = mt5.ORDER_TYPE_BUY if signal_details['trade_type_str'].lower() == 'buy' else mt5.ORDER_TYPE_SELL
             price = tick.ask if trade_type == mt5.ORDER_TYPE_BUY else tick.bid
             point, digits = symbol_info.point, symbol_info.digits
 
+            # =========================================================================
+            # CALCULAR STOP LOSS
+            # =========================================================================
             stop_loss_proposto = signal_details.get("stop_loss_base", 0.0)
 
             # Lógica para SL de segurança em ordens de teste
@@ -120,29 +128,150 @@ def execute_trade_from_signal(instance: ActiveRobotInstance, signal_details: dic
             if abs(sl_reference_price - stop_loss_proposto) < distancia_minima_corretora:
                 offset = distancia_minima_corretora * 1.05
                 stop_loss_final = sl_reference_price - offset if trade_type == mt5.ORDER_TYPE_BUY else sl_reference_price + offset
-
+            
+            # Calcula a distância final até o SL (será usada para cálculo de risco)
             sl_distance_final = abs(price - stop_loss_final)
 
-            # Risk Management Check 2: Max Risk per Trade
+            #============================================================================
+            # CORREÇÃO: VALIDAÇÃO DE RISCO POR TRADE (Risk Management Check 2)
+            # ============================================================================
+
+            # Obtém informações atualizadas da conta (saldo, margem, etc)
             account_info = mt5_conn.account_info()
+
+            # Valida se conseguiu obter as informações E se há saldo positivo
             if account_info and account_info.balance > 0:
-                # Converte o lot_size (Decimal) para float para garantir a compatibilidade matemática
-                lot_size_float = float(instance.lot_size)
-                potential_loss = Decimal(str(potential_loss))
+                # -------------------------------------------------------------------------
+                # PASSO 1: CONVERTER SALDO PARA DECIMAL
+                # -------------------------------------------------------------------------
+                # Converte o saldo da conta (que vem como float do MT5) para Decimal
+                # Isso garante precisão nos cálculos financeiros
                 balance = Decimal(str(account_info.balance))
+                logger.info(f"[RISK_MG] Saldo da conta: ${balance}")
+
+                # -------------------------------------------------------------------------
+                # PASSO 2: OBTER TAMANHO DO LOTE (JÁ É DECIMAL)
+                # -------------------------------------------------------------------------
+                # instance.lot_size JÁ É Decimal (vem do banco de dados como DecimalField)
+                # NÃO precisa converter! Usar diretamente
+                lot_size = instance.lot_size
+
+                # -------------------------------------------------------------------------
+                # PASSO 3: CALCULAR PERDA POTENCIAL SE O STOP LOSS FOR ATINGIDO
+                # -------------------------------------------------------------------------
+                # sl_distance_final foi calculado anteriormente (distância até o SL em preço)
+                # Exemplo: Entry=$1.2000, SL=$1.1950 → sl_distance_final=0.0050
+                # Converte para Decimal de forma segura
+                sl_distance = Decimal(str(sl_distance_final))
+
+                # Valor em USD que cada pip movimenta por lote
+                # Para 1 lote padrão Forex: geralmente $10/pip
+                # Para mini-lote (0.1): $1/pip
+                # Para micro-lote (0.01): $0.10/pip
+                value_per_pip = Decimal('10.0')
+
+                # Fórmula: Perda Potencial = Distância SL × Valor por pip × Quantidade de lotes
+                # Exemplo:
+                #   sl_distance = 0.0050 (50 pips)
+                #   value_per_pip = $10
+                #   lot_size = 2.0 lotes
+                # Cálculo: 0.0050 × $10 × 2.0 = $100 de perda potencial
+                potential_loss = sl_distance * value_per_pip * lot_size
+                logger.info(
+                    f"[RISK_MG] Cálculo de perda potencial: "
+                    f"SL Distance={sl_distance}, "
+                    f"Value/pip=${value_per_pip}, "
+                    f"Lot Size={lot_size}, "
+                    f"Potential Loss=${potential_loss}"
+                )
+
+                # -------------------------------------------------------------------------
+                # PASSO 4: CALCULAR PERCENTUAL DE RISCO EM RELAÇÃO AO SALDO
+                # -------------------------------------------------------------------------
+                # Fórmula: (Perda Potencial ÷ Saldo) × 100
+                # Exemplo: ($100 ÷ $10,000) × 100 = 1%
+                # Isso indica que este trade arrisca 1% do saldo total
                 risk_percent = (potential_loss / balance) * Decimal('100')
-                if risk_percent > user.profile.max_risk_per_trade:
-                    logger.warning(f"[RISK_MG] Trade para {symbol} bloqueado. Risco ({risk_percent:.2f}%) excede o limite de {user.profile.max_risk_per_trade}%.")
+
+                # Arredonda para 2 casas decimais para comparação
+                risk_percent_rounded = risk_percent.quantize(
+                    Decimal('0.01'),
+                    rounding=ROUND_HALF_UP
+                )
+                logger.info(
+                    f"[RISK_MG] Trade arrisca {risk_percent_rounded}% do saldo "
+                    f"(${potential_loss} de ${balance})"
+                )
+
+                # -------------------------------------------------------------------------
+                # PASSO 5: VALIDAR SE O RISCO ESTÁ DENTRO DO LIMITE CONFIGURADO
+                # -------------------------------------------------------------------------
+                # Converte o limite máximo de risco do perfil do usuário para Decimal
+                max_risk_allowed = Decimal(str(user.profile.max_risk_per_trade))
+
+                # Compara o risco calculado com o limite configurado
+                if risk_percent_rounded > max_risk_allowed:
+                    # BLOQUEIO: Trade excede o limite de risco permitido
+                    logger.warning(
+                        f"[RISK_MG] ⚠️ TRADE BLOQUEADO! "
+                        f"Símbolo: {symbol}, "
+                        f"Risco calculado: {risk_percent_rounded}%, "
+                        f"Limite permitido: {max_risk_allowed}%, "
+                        f"Perda potencial: ${potential_loss}"
+                    )
+                    # Retorna imediatamente sem executar a ordem
+                    # Isso protege a conta de trades com risco excessivo                  
                     return
+                
+                else:
+                    # Trade aprovado: risco está dentro dos limites
+                    logger.info(
+                        f"[RISK_MG] ✅ Trade aprovado. "
+                        f"Risco {risk_percent_rounded}% está dentro do limite de {max_risk_allowed}%"
+                    )
 
+            # =========================================================================
+            # CALCULAR TAKE PROFIT
+            # ========================================================================= 
+
+
+            # Obtém a relação risco/retorno configurada (padrão: 1.5)
+            # Exemplo: se SL = 50 pips, TP = 75 pips (1.5x)
             risco_retorno = signal_details.get('risco_retorno', 1.5)
-            take_profit = price + (sl_distance_final * risco_retorno) if trade_type == mt5.ORDER_TYPE_BUY else price - (sl_distance_final * risco_retorno)
 
-            request = _build_trade_request(
-                symbol=symbol, trade_type=trade_type, volume=float(instance.lot_size), price=price,
-                sl=stop_loss_final, tp=take_profit, comment=signal_details.get('comment', 'BS-Trade')[:31],
-                digits=digits, magic_number=current_magic_number
+            # Calcula o preço de take profit baseado na distância do SL
+            # Para COMPRA: TP fica ACIMA do preço de entrada
+            # Para VENDA: TP fica ABAIXO do preço de entrada
+            if trade_type == mt5.ORDER_TYPE_BUY:
+                take_profit = price + (sl_distance_final * risco_retorno)
+            else:  # SELL
+                take_profit = price - (sl_distance_final * risco_retorno)
+
+            logger.info(
+                f"[TRADER_ENGINE] Preços calculados: "
+                f"Entry={price}, SL={stop_loss_final}, TP={take_profit}, "
+                f"Risk/Reward={risco_retorno}"
             )
+
+            # =========================================================================
+            # CONSTRUIR REQUISIÇÃO DE ORDEM
+            # =========================================================================
+            request = _build_trade_request(
+                symbol=symbol, 
+                trade_type=trade_type, 
+                volume=float(instance.lot_size), # MT5 exige float aqui
+                price=price,
+                sl=stop_loss_final, 
+                tp=take_profit, 
+                comment=signal_details.get('comment', 'BS-Trade')[:31],
+                digits=digits, 
+                magic_number=current_magic_number
+            )
+            logger.info(f"[TRADER_ENGINE] Enviando ordem: {request}")
+
+            # =========================================================================
+            # ENVIAR ORDEM PARA O BROKER
+            # =========================================================================
             result = mt5_conn.order_send(request)
 
     except Exception as e:

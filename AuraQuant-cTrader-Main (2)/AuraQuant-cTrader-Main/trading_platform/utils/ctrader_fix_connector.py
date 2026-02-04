@@ -17,6 +17,16 @@ import logging
 from datetime import datetime, timezone
 from queue import Queue, Empty
 
+# ============================================================================
+# IMPORT DO HANDLER DE EXECUTION REPORT (NOVO)
+# ============================================================================
+try:
+    from .execution_report_handler import ExecutionReportHandler
+except ImportError:
+    # Se falhar (ex: em ambiente de testes), define como None
+    ExecutionReportHandler = None
+    logging.warning("ExecutionReportHandler não pôde ser importado")
+
 # Configuração do logger para este módulo
 logger = logging.getLogger(__name__)
 
@@ -25,7 +35,6 @@ class FIXConnector:
     Uma classe para gerenciar uma sessão de trading FIX completa, incluindo
     conexões separadas para cotações (QUOTE) and ordens (TRADE).
     """
-
     def __init__(self, trade_config, quote_config, fix_version="FIX.4.4"):
         """
         Inicializa o conector com as configurações para os endpoints de TRADE e QUOTE.
@@ -63,6 +72,24 @@ class FIXConnector:
 
         # Controle de encerramento
         self._stop_event = threading.Event()
+
+        # =========================================================================
+        # ADICIONAR: Instância do ExecutionReportHandler (NOVO)
+        # =========================================================================
+        # Cria uma instância do handler para processar ExecutionReports
+        # Este handler será chamado automaticamente quando recebermos
+        # uma mensagem de confirmação do broker
+        if ExecutionReportHandler:
+            self.execution_handler = ExecutionReportHandler()
+            logger.info("ExecutionReportHandler inicializado")
+        else:
+            self.execution_handler = None
+        logger.warning("ExecutionReportHandler não disponível")
+        # Callback opcional para processar mensagens customizadas
+        # Isso permite que código externo registre funções que serão
+        # chamadas quando mensagens específicas chegarem
+        self.message_callbacks = {}
+
 
     def _create_fix_client(self):
         """Cria uma instância do cliente simplefix."""
@@ -206,27 +233,109 @@ class FIXConnector:
         self._send_message(heartbeat_msg, session_type)
 
     def _handle_received_message(self, message, session_type):
-        """Processa uma mensagem FIX recebida."""
+        """
+        Processa uma mensagem FIX recebida.
+        Agora com suporte a ExecutionReport!
+        """
+        # Extrai o tipo de mensagem (Tag 35)
         msg_type = message.get_value(35)
 
-        # Responde a Test Request com um Heartbeat
-        if msg_type == b'1': # Test Request
+        # =========================================================================
+        # CASE 1: Test Request (Tag 35=1)
+        # =========================================================================
+        # O broker está testando se estamos vivos
+        # Precisamos responder com um Heartbeat
+        if msg_type == b'1':
             logger.info(f"[{session_type.upper()}] Test Request recebido. Respondendo com Heartbeat.")
+            
+            # Obtém o ID do Test Request (se houver)
             test_req_id = message.get_value(112)
+            
+            # Cria mensagem de Heartbeat como resposta
             hb_msg = simplefix.FixMessage()
-            hb_msg.append_pair(35, "0")
+            hb_msg.append_pair(35, "0")  # Tag 35=0 → Heartbeat
             if test_req_id:
-                hb_msg.append_pair(112, test_req_id)
+                hb_msg.append_pair(112, test_req_id)  # Inclui mesmo ID
+            
+            # Envia o Heartbeat de volta
             self._send_message(hb_msg, session_type)
 
-        # Log de Heartbeats recebidos
-        elif msg_type == b'0': # Heartbeat
+        # =========================================================================
+        # CASE 2: Heartbeat (Tag 35=0)
+        # =========================================================================
+        # Mensagem de "estou vivo" do broker
+        # Apenas registramos no log, não precisa fazer nada
+        elif msg_type == b'0':
             logger.debug(f"[{session_type.upper()}] Heartbeat do servidor recebido.")
 
-        # Coloca outras mensagens na fila para processamento externo
+        # =========================================================================
+        # CASE 3: ExecutionReport (Tag 35=8) ← NOVO!
+        # =========================================================================
+        # Esta é a mensagem mais importante!
+        # Confirma se a ordem foi executada, rejeitada, etc.
+        elif msg_type == b'8':
+            logger.info(f"[{session_type.upper()}] ExecutionReport recebido!")
+            
+            # =====================================================================
+            # PROCESSAR COM O HANDLER
+            # =====================================================================
+            # Verifica se o handler está disponível
+            if self.execution_handler:
+                try:
+                    # Chama o método principal do handler
+                    # Este método vai:
+                    # 1. Extrair dados da mensagem
+                    # 2. Identificar o tipo de status
+                    # 3. Atualizar o banco de dados
+                    report_data = self.execution_handler.process_execution_report(message)
+                    
+                    # Log de sucesso
+                    if report_data:
+                        logger.info(
+                            f"ExecutionReport processado: "
+                            f"ClOrdID={report_data['clord_id']}, "
+                            f"Status={report_data['ord_status']}"
+                        )
+                    
+                except Exception as e:
+                    # Se der erro, registra mas não quebra o sistema
+                    logger.error(
+                        f"Erro ao processar ExecutionReport: {e}",
+                        exc_info=True  # Inclui stack trace completo
+                    )
+            else:
+                # Handler não está disponível
+                # Apenas coloca na fila para processamento manual
+                logger.warning("ExecutionReportHandler não disponível. Mensagem colocada na fila.")
+                _, _, _, queue = self._get_session_details(session_type)
+                queue.put(message)
+            
+            # =====================================================================
+            # CHAMAR CALLBACKS CUSTOMIZADOS (se registrados)
+            # =====================================================================
+            # Permite que código externo também processe a mensagem
+            if '8' in self.message_callbacks:
+                try:
+                    self.message_callbacks['8'](message)
+                except Exception as e:
+                    logger.error(f"Erro no callback customizado para ExecutionReport: {e}")
+
+        # =========================================================================
+        # CASE 4: Outras mensagens
+        # =========================================================================
+        # Qualquer outro tipo de mensagem vai para a fila
+        # Pode ser processado externamente se necessário
         else:
             _, _, _, queue = self._get_session_details(session_type)
             queue.put(message)
+            
+            # Se houver callback registrado para este tipo, chama
+            msg_type_str = msg_type.decode() if isinstance(msg_type, bytes) else msg_type
+            if msg_type_str in self.message_callbacks:
+                try:
+                    self.message_callbacks[msg_type_str](message)
+                except Exception as e:
+                    logger.error(f"Erro no callback para tipo {msg_type_str}: {e}")
 
     def _listener_loop(self, session_type):
         """Loop que escuta por mensagens no socket e as processa."""
@@ -387,3 +496,35 @@ class FIXConnector:
                 time.sleep(0.2) # Breve pausa para não inundar o servidor
             except Exception as e:
                 logger.error(f"Erro ao tentar fechar posição {pos}: {e}")
+
+    
+    # ... métodos existentes acima ...
+    
+    def register_message_callback(self, msg_type, callback_function):
+        """
+        Registra uma função callback para ser chamada quando
+        uma mensagem de determinado tipo for recebida.
+        
+        Args:
+            msg_type (str): Tipo da mensagem FIX (ex: '8' para ExecutionReport)
+            callback_function (callable): Função a ser chamada quando mensagem chegar
+            
+        Exemplo de uso:
+            def meu_processador(message):
+                print(f"Recebi mensagem: {message}")
+            
+            connector.register_message_callback('8', meu_processador)
+        """
+        self.message_callbacks[msg_type] = callback_function
+        logger.info(f"Callback registrado para tipo de mensagem: {msg_type}")
+    
+    def unregister_message_callback(self, msg_type):
+        """
+        Remove um callback previamente registrado.
+        
+        Args:
+            msg_type (str): Tipo da mensagem FIX
+        """
+        if msg_type in self.message_callbacks:
+            del self.message_callbacks[msg_type]
+            logger.info(f"Callback removido para tipo de mensagem: {msg_type}")
