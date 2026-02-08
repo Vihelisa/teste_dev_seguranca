@@ -1,16 +1,16 @@
 import logging
 import traceback
 import json
-import decimal
 import numpy as np
 import pandas as pd
 import traceback  # Para logging detalhado de erros (se ainda não estiver importado)
-from decimal import Decimal, ROUND_HALF_UP  # Para cálculos financeiros precisos
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP  # Para cálculos financeiros precisos
 from datetime import datetime
 from django.contrib.auth.models import User
 from django.conf import settings
+from django.utils import timezone  # ← Para timestamp preciso
+from trading_platform.models import TradeLog, Notification  # ← Para salvar logs
 from .models import TradingAccount, Notification, TradeLog, ActiveRobotInstance
 
 # Handle optional MetaTrader5 import for non-Windows environments
@@ -61,10 +61,216 @@ def _build_trade_request(symbol: str, trade_type: int, volume: float, price: flo
 #           API PÚBLICA DE EXECUÇÃO DE ORDENS
 # =============================================================================
 
+
+# =============================================================================
+#           FUNÇÃO AUXILIAR PARA FIX PROTOCOL (NOVO)
+# =============================================================================
+
+def create_pending_trade_log(instance, signal_details, clordid, order_type='FIX'):
+    """
+    Cria um TradeLog com status PENDING para ordens FIX.
+    
+    Esta função é chamada IMEDIATAMENTE após enviar a ordem FIX.
+    O TradeLog fica com status PENDING até que o ExecutionReport confirme.
+    
+    Args:
+        instance (ActiveRobotInstance): Instância do robô que está operando
+        signal_details (dict): Detalhes do sinal de trading
+        clordid (str): ID único da ordem (ClOrdID) que foi enviado
+        order_type (str): Tipo de ordem ('FIX' ou 'MT5')
+    
+    Returns:
+        TradeLog: O objeto TradeLog criado (ou None se houver erro)
+    
+    Explicação:
+        Quando usamos FIX Protocol, o fluxo é assíncrono:
+        1. Enviamos a ordem → build_and_send_new_order_single()
+        2. Criamos este TradeLog com status PENDING
+        3. Sistema continua funcionando normalmente
+        4. [... tempo passa ...]
+        5. ExecutionReport chega (pode ser segundos depois)
+        6. FIX Listener atualiza este TradeLog para SUCCESS ou FAILED
+        
+        O ClOrdID é a "chave" que conecta:
+        - Este TradeLog (que estamos criando agora)
+        - O ExecutionReport (que vai chegar depois)
+    """
+    try:
+        # ---------------------------------------------------------------------
+        # PASSO 1: Extrair dados do sinal
+        # ---------------------------------------------------------------------
+        
+        # Símbolo do ativo (ex: EURUSD, GBPUSD)
+        symbol = signal_details.get('symbol_id', 'UNKNOWN')
+        
+        # Lado da operação: 'buy' ou 'sell'
+        side = signal_details.get('side', 'unknown')
+        
+        # Quantidade em lotes (ex: 0.01, 1.0, 5.0)
+        quantity = signal_details.get('quantity_in_lots', 0)
+        
+        # Preço de entrada planejado (pode ser diferente do real)
+        entry_price = signal_details.get('entry_price', 0)
+        
+        # Stop Loss planejado
+        sl_price = signal_details.get('sl_price', 0)
+        
+        # Take Profit planejado
+        tp_price = signal_details.get('tp_price', 0)
+        
+        # Comentário da ordem
+        comment = signal_details.get('comment', f'FIX-{clordid}')
+        
+        # ---------------------------------------------------------------------
+        # PASSO 2: Montar dados da requisição (para auditoria)
+        # ---------------------------------------------------------------------
+        
+        # Este dicionário será salvo no campo request_data (JSON)
+        # Ele contém TUDO que enviamos para o broker
+        # Importante para:
+        # - Auditoria (saber exatamente o que foi pedido)
+        # - Debug (se algo der errado)
+        # - Rastreamento (conectar com ExecutionReport)
+        request_data = {
+            'clordid': clordid,  # ← CHAVE MAIS IMPORTANTE!
+            'symbol': symbol,
+            'side': side,
+            'quantity': quantity,
+            'entry_price': entry_price,
+            'sl_price': sl_price,
+            'tp_price': tp_price,
+            'order_type': order_type,
+            'timestamp': timezone.now().isoformat()
+        }
+        
+        logger.info(
+            f"Criando TradeLog PENDING: ClOrdID={clordid}, "
+            f"Symbol={symbol}, Side={side}, Qty={quantity}"
+        )
+        
+        # ---------------------------------------------------------------------
+        # PASSO 3: Criar o TradeLog no banco de dados
+        # ---------------------------------------------------------------------
+        
+        trade_log = TradeLog.objects.create(
+            # Relacionamentos
+            instance=instance,  # Qual robô está operando
+            user=instance.user,  # Dono do robô
+            trading_account=instance.trading_account,  # Conta de trading
+            
+            # Status CRÍTICO: PENDING!
+            # Este status indica: "Ordem enviada, aguardando confirmação"
+            status=TradeLog.TradeStatus.PENDING,
+            
+            # Dados da ordem
+            symbol=symbol,
+            trade_type=side.upper(),  # BUY ou SELL
+            volume=Decimal(str(quantity)),  # Quantidade (Decimal para precisão!)
+            
+            # Preços planejados (podem mudar após confirmação)
+            price_entry=Decimal(str(entry_price)) if entry_price else None,
+            sl_price=Decimal(str(sl_price)) if sl_price else None,
+            tp_price=Decimal(str(tp_price)) if tp_price else None,
+            
+            # Dados JSON para auditoria
+            request_data=request_data,  # O que enviamos
+            response_data={},  # Será preenchido quando ExecutionReport chegar
+            
+            # Comentários
+            comment=f"Ordem FIX enviada. Aguardando confirmação. ClOrdID: {clordid}",
+            
+            # Ticket ainda não temos (só teremos quando broker confirmar)
+            order_ticket=None  # Será preenchido pelo ExecutionReportHandler
+        )
+        
+        logger.info(
+            f"TradeLog ID={trade_log.id} criado com status PENDING. "
+            f"ClOrdID={clordid}"
+        )
+        
+        return trade_log
+        
+    except Exception as e:
+        # Se der erro ao criar TradeLog, registra mas não quebra o sistema
+        logger.error(
+            f"Erro ao criar TradeLog PENDING para ClOrdID={clordid}: {e}",
+            exc_info=True
+        )
+        return None
+
+
 def execute_trade_from_signal(instance: ActiveRobotInstance, signal_details: dict):
     """
-    Função Mestra de Execução V15.0. Versão final com logging completo e robusto.
+    Função Mestra de Execução V16.0 - Com suporte a MT5 e FIX Protocol.
+    
+    NOVIDADE:
+    Agora detecta automaticamente qual protocolo usar baseado na 
+    configuração da conta (TradingAccount.trading_protocol).
+    
+    Fluxos suportados:
+    - MT5: Síncrono (resposta imediata, TradeLog criado com status final)
+    - FIX: Assíncrono (TradeLog PENDING, atualizado pelo ExecutionReportHandler)
     """
+    # =========================================================================
+    # ROTEAMENTO POR PROTOCOLO (NOVO)
+    # =========================================================================
+    
+    # Obtém a conta de trading associada à instância do robô
+    account = instance.trading_account
+    # Detecta qual protocolo está configurado para esta conta
+    protocol = account.trading_protocol
+
+    # =========================================================================
+    # DECISÃO: Qual função chamar?
+    # =========================================================================
+    
+    if protocol == 'FIX':
+        # ✅ Usar FIX Protocol (cTrader, brokers profissionais)
+        logger.info(
+            f"[TRADE_ROUTER] → Roteando para _execute_via_fix() "
+            f"(Assíncrono)"
+        )
+        return _execute_via_fix(instance, signal_details)
+    elif protocol == 'MT5':
+        # ✅ Usar MetaTrader 5 (maioria dos brokers retail)
+        logger.info(
+            f"[TRADE_ROUTER] → Roteando para _execute_via_mt5() "
+            f"(Síncrono)"
+        )
+        return _execute_via_mt5(instance, signal_details)
+    else:
+        # ❌ Protocolo desconhecido (não deveria acontecer devido às choices)
+        logger.error(
+            f"[TRADE_ROUTER] ❌ Protocolo desconhecido: '{protocol}' "
+            f"para conta {account.account_login}"
+        )
+        
+        # Criar log de erro
+        TradeLog.objects.create(
+            instance=instance,
+            user=instance.user,
+            trading_account=account,
+            status=TradeLog.TradeStatus.EXCEPTION,
+            request_data=signal_details,
+            comment=f"Protocolo de trading inválido: {protocol}",
+            symbol=signal_details.get('symbol', 'UNKNOWN')
+        )
+        
+        # Notificar usuário
+        Notification.objects.create(
+            user=instance.user,
+            message=f"Erro: Protocolo '{protocol}' não suportado",
+            notification_type=Notification.NotificationType.ERROR
+        )
+        
+        return None
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │ FUNÇÃO 2: Execução MT5 (RENOMEADA - código antigo)          │
+# └─────────────────────────────────────────────────────────────┘
+
+def _execute_via_mt5(instance, signal_details):
+    """Executa via MT5"""
     if not mt5 or not mt5_connection:
         logger.error("MT5 not available. Cannot execute trade.")
         return
@@ -308,6 +514,42 @@ def execute_trade_from_signal(instance: ActiveRobotInstance, signal_details: dic
                 comment="order_send() retornou None.", symbol=symbol
             )
             Notification.objects.create(user=user, message=f"Falha de comunicação para ordem em {symbol}.", notification_type='ERROR')
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │ FUNÇÃO 3: Execução FIX (NOVA)                               │
+# └─────────────────────────────────────────────────────────────┘
+def _execute_via_fix(instance, signal_details):
+    """
+    Executa ordem via FIX Protocol (Assíncrono).
+    
+    IMPLEMENTAÇÃO TEMPORÁRIA:
+    Por enquanto, apenas loga e retorna None.
+    Será implementada completamente na próxima fase.
+    """
+    logger.warning(
+        f"[FIX_ENGINE] Execução FIX ainda não implementada! "
+        f"Ordem para {signal_details.get('symbol')} não foi enviada."
+    )
+    
+    # Criar TradeLog como PENDING (placeholder)
+    trade_log = TradeLog.objects.create(
+        instance=instance,
+        user=instance.user,
+        trading_account=instance.trading_account,
+        status=TradeLog.TradeStatus.PENDING,
+        request_data=signal_details,
+        comment="FIX Protocol - Implementação em desenvolvimento",
+        symbol=signal_details.get('symbol', 'UNKNOWN')
+    )
+    
+    # Notificar usuário
+    Notification.objects.create(
+        user=instance.user,
+        message=f"⚠️ FIX Protocol em desenvolvimento. Ordem não enviada.",
+        notification_type=Notification.NotificationType.WARNING
+    )
+    
+    return trade_log
 
 # =============================================================================
 #           API PÚBLICA DE FECHAMENTO DE ORDENS (COM AUDITORIA)

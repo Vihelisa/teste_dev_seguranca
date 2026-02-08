@@ -38,15 +38,34 @@ class UserProfile(models.Model):
 
 class TradingAccount(models.Model):
     """ Armazena as credenciais criptografadas das contas de trading (MT5/cTrader/FIX) dos usuários. """
+    # Grupo 1: Credenciais de Acesso
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='trading_accounts')
     nickname = models.CharField(max_length=50, blank=True, null=True, help_text="Apelido para a conta")
+    #Login
     account_login = models.CharField(max_length=100, unique=True, help_text="O número de login da conta, deve ser único.")
+    #Servidor
     server = models.CharField(max_length=100)
+    #Senha
     encrypted_password = models.CharField(max_length=255)
 
-    # [PHOENIX COMPLIANCE] - Monitoramento de Saldo
-    current_balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.0, help_text="Saldo atual da conta (atualizado periodicamente).")
+    # =========================================================================
+    # NOVO CAMPO: Protocolo de Comunicação - Como se conectar
+    # =========================================================================
+    trading_protocol = models.CharField(
+        max_length=10, # ← 'MT5' tem 3 chars, 'FIX' tem 3 chars
+        choices=[      # ← Define opções válidas
+            ('MT5', 'MetaTrader 5'),
+            ('FIX', 'FIX Protocol (cTrader)')
+        ],
+        default='MT5', # ← Contas existentes ficam MT5
+        help_text="Protocolo usado para enviar ordens ao broker",  # ← Ajuda no Admin Django
+        verbose_name="Protocolo de Trading"  # ← Nome bonito no Admin
+    )
 
+    # [PHOENIX COMPLIANCE] - Monitoramento de Saldo
+    #Saldo
+    current_balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.0, help_text="Saldo atual da conta (atualizado periodicamente).")
+    #Data de criação
     created_at = models.DateTimeField(auto_now_add=True)
 
     def set_password(self, raw_password):
