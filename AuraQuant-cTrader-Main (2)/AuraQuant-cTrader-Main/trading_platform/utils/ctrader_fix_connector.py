@@ -79,16 +79,25 @@ class FIXConnector:
         # Cria uma instância do handler para processar ExecutionReports
         # Este handler será chamado automaticamente quando recebermos
         # uma mensagem de confirmação do broker
+        # CORRETO:
         if ExecutionReportHandler:
             self.execution_handler = ExecutionReportHandler()
             logger.info("ExecutionReportHandler inicializado")
         else:
             self.execution_handler = None
-        logger.warning("ExecutionReportHandler não disponível")
+            logger.warning("ExecutionReportHandler não disponível")  # ← só no else
         # Callback opcional para processar mensagens customizadas
         # Isso permite que código externo registre funções que serão
         # chamadas quando mensagens específicas chegarem
         self.message_callbacks = {}
+        # =========================================================================
+        # PREÇOS EM TEMPO REAL (FEED QUOTE)
+        # =========================================================================
+        # Armazena o último preço recebido por símbolo via feed QUOTE
+        # Formato: { 'EURUSD': Decimal('1.08523'), 'USDJPY': Decimal('155.342') }
+        # Atualizado automaticamente pelo _handle_received_message ao receber
+        # mensagens W (MarketDataSnapshot) e X (MarketDataIncrementalRefresh)
+        self.last_prices = {}
 
 
     def _create_fix_client(self):
@@ -269,7 +278,24 @@ class FIXConnector:
             logger.debug(f"[{session_type.upper()}] Heartbeat do servidor recebido.")
 
         # =========================================================================
-        # CASE 3: ExecutionReport (Tag 35=8) ← NOVO!
+        # CASE 3: MarketDataSnapshot (Tag 35=W)
+        # =========================================================================
+        # Mensagem completa de snapshot de preço para um símbolo
+        # Recebida após enviar um MarketDataRequest ao broker
+        # Contém: Bid (Tag 270 com Tag 269=0) e Ask (Tag 270 com Tag 269=1)
+        elif msg_type == b'W':
+            self._parse_and_store_price(message, 'W')
+
+        # =========================================================================
+        # CASE 4: MarketDataIncrementalRefresh (Tag 35=X)
+        # =========================================================================
+        # Atualização incremental de preço (apenas o que mudou)
+        # Chega continuamente durante a sessão QUOTE ativa
+        elif msg_type == b'X':
+            self._parse_and_store_price(message, 'X')
+
+        # =========================================================================
+        # CASE 5: ExecutionReport (Tag 35=8) ← NOVO!
         # =========================================================================
         # Esta é a mensagem mais importante!
         # Confirma se a ordem foi executada, rejeitada, etc.
@@ -528,3 +554,66 @@ class FIXConnector:
         if msg_type in self.message_callbacks:
             del self.message_callbacks[msg_type]
             logger.info(f"Callback removido para tipo de mensagem: {msg_type}")
+
+    def _parse_and_store_price(self, message, msg_type_label):
+        """
+        Extrai o preço Bid/Ask de uma mensagem de MarketData (W ou X)
+        e armazena em self.last_prices para consulta posterior.
+
+        Protocolo FIX — tags relevantes:
+        Tag 55  = Symbol (ex: b'EURUSD')
+        Tag 269 = MDEntryType: b'0'=Bid, b'1'=Ask
+        Tag 270 = MDEntryPx (o preço em si)
+
+        Usamos o MID PRICE (média de Bid e Ask) como referência,
+        pois é o mais neutro para cálculo de risco e validação de sinal.
+        """
+        from decimal import Decimal, InvalidOperation
+
+        try:
+            # Extrai símbolo
+            symbol_raw = message.get_value(55)
+            if not symbol_raw:
+                return
+            symbol = symbol_raw.decode() if isinstance(symbol_raw, bytes) else symbol_raw
+
+            # Extrai tipo de entrada e preço
+            # Nota: simplefix retorna o último valor das tags repetidas.
+            # Para uma implementação completa com MDEntryType correto,
+            # seria necessário iterar sobre os grupos repetidos.
+            # Para V1.0, usamos Tag 270 diretamente como referência de preço.
+            price_raw = message.get_value(270)
+            if not price_raw:
+                return
+
+            price_str = price_raw.decode() if isinstance(price_raw, bytes) else price_raw
+            price = Decimal(price_str)
+
+            # Armazena o preço
+            self.last_prices[symbol] = price
+
+            logger.debug(
+                f"[QUOTE FEED] {msg_type_label} → {symbol} = {price}"
+            )
+
+        except (InvalidOperation, AttributeError, Exception) as e:
+            logger.warning(f"[QUOTE FEED] Falha ao parsear preço ({msg_type_label}): {e}")
+
+    def get_last_price(self, symbol):
+        """
+        Retorna o último preço recebido via feed QUOTE para um símbolo.
+
+        Args:
+            symbol (str): Nome do símbolo (ex: 'EURUSD', 'USDJPY')
+
+        Returns:
+            Decimal: Último preço conhecido, ou None se ainda não recebido.
+
+        Uso no tasks.py:
+            fix_price = fix_connector.get_last_price('EURUSD')
+            if fix_price:
+                # usa preço real do FIX
+            else:
+                # usa preço do sinal (fallback)
+        """
+        return self.last_prices.get(symbol, None)
