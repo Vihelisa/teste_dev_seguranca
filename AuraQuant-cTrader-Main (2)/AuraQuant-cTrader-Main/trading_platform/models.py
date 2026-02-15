@@ -174,7 +174,12 @@ class Notification(models.Model):
 class TradeLog(models.Model):
     """ Registra uma trilha de auditoria completa para cada evento de trade. """
     class TradeStatus(models.TextChoices):
-        SUCCESS = 'SUCCESS', 'Sucesso'; FAILED = 'FAILED', 'Falhou'; EXCEPTION = 'EXCEPTION', 'Exceção'; IGNORED = 'IGNORED', 'Ignorado'; CLOSED = 'CLOSED', 'Fechado'
+        PENDING = 'PENDING', 'Pendente'
+        SUCCESS = 'SUCCESS', 'Sucesso'
+        FAILED = 'FAILED', 'Falhou'
+        EXCEPTION = 'EXCEPTION', 'Exceção'
+        IGNORED = 'IGNORED', 'Ignorado'
+        CLOSED = 'CLOSED', 'Fechado'
     
     instance = models.ForeignKey(ActiveRobotInstance, on_delete=models.SET_NULL, null=True, blank=True, related_name='trade_logs')
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='trade_logs')

@@ -295,3 +295,29 @@ if not DEBUG:
     
     # XSS Protection
     SECURE_BROWSER_XSS_FILTER = True
+
+
+# =============================================================================
+#           14. CONFIGURAÇÕES FIX PROTOCOL (cTrader)
+# =============================================================================
+
+# Endpoint TRADE (para enviar ordens)
+FIX_TRADE_HOST = os.getenv('FIX_TRADE_HOST', 'h51.p.ctrader.com')
+FIX_TRADE_PORT = int(os.getenv('FIX_TRADE_PORT', '5201'))
+
+# Endpoint QUOTE (para receber cotações)
+FIX_QUOTE_HOST = os.getenv('FIX_QUOTE_HOST', 'h51.p.ctrader.com')
+FIX_QUOTE_PORT = int(os.getenv('FIX_QUOTE_PORT', '5211'))
+
+# Target IDs (padrão cTrader)
+FIX_TARGET_ID = os.getenv('FIX_TARGET_ID', 'CSERVER')
+FIX_QUOTE_TARGET_ID = os.getenv('FIX_QUOTE_TARGET_ID', 'QUOTE')
+
+# Versão do protocolo FIX
+FIX_VERSION = os.getenv('FIX_VERSION', 'FIX.4.4')
+
+# Timeout de conexão (segundos)
+FIX_CONNECTION_TIMEOUT = int(os.getenv('FIX_CONNECTION_TIMEOUT', '30'))
+
+# Heartbeat interval (segundos)
+FIX_HEARTBEAT_INTERVAL = int(os.getenv('FIX_HEARTBEAT_INTERVAL', '30'))
