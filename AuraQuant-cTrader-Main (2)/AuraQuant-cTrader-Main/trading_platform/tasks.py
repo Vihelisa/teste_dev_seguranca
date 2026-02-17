@@ -8,9 +8,10 @@ import datetime as dt
 import uuid
 import openai
 import joblib
-
+import importlib
 import pandas as pd
 import numpy as np
+from decimal import Decimal
 from celery import shared_task
 from django.db import transaction
 from django.conf import settings
@@ -23,6 +24,101 @@ from trading_platform.utils.ctrader_fix_connector import FIXConnector
 from trading_platform.quant_engine.decision_engine import analyze_and_get_signal
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+#           CÁLCULO DE PnL FLUTUANTE (KILL SWITCH)
+# =============================================================================
+def calculate_floating_pnl(open_positions_tracker, fix_connector, log_prefix):
+    """
+    Calcula o lucro/prejuizo flutuante de todas as posicoes abertas.
+
+    Para cada posicao no rastreador:
+    1. Busca o price_entry no TradeLog via broker_order_id
+    2. Obtém o preco atual do feed FIX
+    3. Calcula PnL baseado na direcao (Buy/Sell)
+
+    Args:
+        open_positions_tracker (dict): {'clordid': {'symbol':..., 'volume':..., 'side':...}}
+        fix_connector (FIXConnector): conector com last_prices atualizado
+        log_prefix (str): prefixo para logs
+
+    Returns:
+        Decimal: PnL total flutuante (positivo = lucro, negativo = prejuizo)
+    """
+
+    total_pnl = Decimal('0')
+
+    if not open_positions_tracker:
+        return total_pnl
+
+    for clordid, pos in open_positions_tracker.items():
+        try:
+            symbol = pos['symbol']
+            volume = Decimal(str(pos['volume']))
+            side   = pos['side']  # 1=Buy, 2=Sell
+
+            # -----------------------------------------------------------------
+            # PASSO 1: Buscar preco de entrada no banco
+            # -----------------------------------------------------------------
+            trade_log = TradeLog.objects.filter(
+                broker_order_id=clordid,
+                status='SUCCESS'
+            ).first()
+
+            if not trade_log or not trade_log.price_entry:
+                logger.warning(
+                    f"{log_prefix} [KILL SWITCH] TradeLog nao encontrado "
+                    f"para ClOrdID={clordid}. Pulando posicao."
+                )
+                continue
+
+            entry_price = Decimal(str(trade_log.price_entry))
+
+            # -----------------------------------------------------------------
+            # PASSO 2: Obter preco atual do feed FIX
+            # -----------------------------------------------------------------
+            current_price = fix_connector.get_last_price(symbol)
+
+            if not current_price:
+                logger.warning(
+                    f"{log_prefix} [KILL SWITCH] Preco FIX indisponivel "
+                    f"para {symbol}. Pulando posicao."
+                )
+                continue
+
+            # -----------------------------------------------------------------
+            # PASSO 3: Calcular PnL
+            # -----------------------------------------------------------------
+            # Tamanho do contrato padrao Forex: 1 lote = 100.000 unidades
+            # Para MVP usamos valor fixo. Fase futura: usar symbol_info do MT5
+            CONTRACT_SIZE = Decimal('100000')
+
+            if side == 1:  # Buy: lucro quando preco sobe
+                pnl = (current_price - entry_price) * volume * CONTRACT_SIZE
+            else:           # Sell: lucro quando preco cai
+                pnl = (entry_price - current_price) * volume * CONTRACT_SIZE
+
+            total_pnl += pnl
+
+            logger.info(
+                f"{log_prefix} [KILL SWITCH] {symbol} "
+                f"{'Buy' if side == 1 else 'Sell'} "
+                f"Entry={entry_price} | Atual={current_price} | "
+                f"Vol={volume} | PnL=${pnl:.2f}"
+            )
+
+        except Exception as e:
+            logger.error(
+                f"{log_prefix} [KILL SWITCH] Erro ao calcular PnL "
+                f"para posicao {clordid}: {e}",
+                exc_info=True
+            )
+            continue
+
+    logger.info(f"{log_prefix} [KILL SWITCH] PnL Total Flutuante: ${total_pnl:.2f}")
+    return total_pnl
+
 
 # =============================================================================
 #           SERIALIZADOR JSON
@@ -180,6 +276,49 @@ def run_account_monitor_task(self, account_id):
         cache_key_pos = f"birdstone:positions:{account.id}"
         open_positions_tracker = cache.get(cache_key_pos) or {}
 
+        # -----------------------------------------------------------------
+        # SUBSCREVER FEED DE PREÇOS PARA TODOS OS SÍMBOLOS ATIVOS
+        # -----------------------------------------------------------------
+        # Sem isso, o broker nunca envia ticks e fix_current_price
+        # seria sempre None — mantendo o Split-Brain ativo.
+        subscribed_symbols = set()
+        for instance in active_instances:
+            assets = [a.strip() for a in instance.strategy.assets.split(',')]
+            symbol = assets[0]
+            if symbol not in subscribed_symbols:
+                fix_connector.send_market_data_request(symbol)
+                subscribed_symbols.add(symbol)
+                logger.info(f"{log_prefix} Feed de precos subscrito para: {symbol}")
+                time.sleep(0.3)  # Pausa entre requisições para não inundar o broker
+
+        logger.info(f"{log_prefix} Simbolos subscritos: {subscribed_symbols}")
+        time.sleep(2)  # Aguarda primeiros ticks chegarem antes de iniciar o loop
+
+        # -----------------------------------------------------------------
+        # CALLBACK: Limpar posições rejeitadas do tracker
+        # -----------------------------------------------------------------
+        def on_execution_report(message):
+            """Remove posicoes rejeitadas/canceladas do open_positions_tracker."""
+            clord_id_raw = message.get_value(11)
+            ord_status_raw = message.get_value(39)
+
+            if not clord_id_raw or not ord_status_raw:
+                return
+
+            clord_id = clord_id_raw.decode() if isinstance(clord_id_raw, bytes) else clord_id_raw
+            ord_status = ord_status_raw if isinstance(ord_status_raw, bytes) else ord_status_raw.encode()
+
+            if ord_status in (b'8', b'4'):  # Rejected ou Canceled
+                if clord_id in open_positions_tracker:
+                    del open_positions_tracker[clord_id]
+                    cache.set(cache_key_pos, open_positions_tracker, timeout=None)
+                    logger.warning(
+                        f"{log_prefix} [EXEC_REPORT] Posicao {clord_id} removida "
+                        f"do tracker — ordem rejeitada/cancelada pelo broker."
+                    )
+        
+        fix_connector.register_message_callback('8', on_execution_report)
+
         # --- 3. Loop Principal ---
         while True:
             cache.touch(lock_key, lock_timeout) # Heartbeat para o Supervisor
@@ -188,9 +327,12 @@ def run_account_monitor_task(self, account_id):
             # -----------------------------------------------------------
             # Simulação de Shadow Accounting (P&L Flutuante)
             # (Necessário pois FIX não faz streaming de Equity)
-            floating_pnl = 0.0
-            # TODO: Implementar fix_connector.get_last_price(symbol) para precisão real.
-            # Por enquanto, assumimos P&L zero se não tivermos update de preço, para não crashar.
+            floating_pnl = calculate_floating_pnl(
+                open_positions_tracker,
+                fix_connector,
+                log_prefix
+            )
+
 
             current_equity = saldo_inicial_sessao + floating_pnl
             current_drawdown_pct = 0.0
@@ -223,42 +365,83 @@ def run_account_monitor_task(self, account_id):
             # B. Lógica de Trading (O Cérebro)
             # -----------------------------------------------------------
             for instance in active_instances:
-                if instance.strategy.strategy_file in saved_ia_map:
-                    # Passa o mapa de IA para o decision_engine
-                    trade_request = analyze_and_get_signal(instance, instance.strategy.strategy_file, saved_ia_map.get(instance.strategy.strategy_file), log_prefix)
+                strategy_file = instance.strategy.strategy_file
 
-                    if trade_request:
-                        logger.info(f"{log_prefix} ✅ CÉREBRO GEROU ORDEM: {trade_request}")
-                        clordid = str(uuid.uuid4())
+                if strategy_file not in saved_ia_map:
+                    logger.warning(f"{log_prefix} Modelo IA nao carregado para '{strategy_file}'. Pulando.")
+                    continue
 
-                        # Mapeamento de side string para int FIX
-                        side_int = 1 if trade_request['side'] == 'Buy' else 2
+                saved_ia = saved_ia_map[strategy_file]
 
-                        success = fix_connector.build_and_send_new_order_single(
-                            clordid=clordid,
+                # -------------------------------------------------------------
+                # PASSO 1: Carregar StrategyContract (objeto, não string)
+                # -------------------------------------------------------------
+                try:
+                    module_path = f"trading_platform.quant_engine.strategies.{strategy_file}"
+                    StrategyContract = importlib.import_module(module_path)
+                except ImportError as e:
+                    logger.error(f"{log_prefix} Falha ao carregar StrategyContract '{strategy_file}': {e}")
+                    continue
+
+                # -------------------------------------------------------------
+                # PASSO 2: Obter preço atual do feed FIX (Anti Split-Brain)
+                # -------------------------------------------------------------
+                assets = [a.strip() for a in instance.strategy.assets.split(',')]
+                symbol = assets[0]
+                fix_current_price = fix_connector.get_last_price(symbol)
+
+                if fix_current_price:
+                    logger.info(f"{log_prefix} [ANTI SPLIT-BRAIN] Preco FIX para {symbol}: {fix_current_price}")
+                else:
+                    logger.warning(f"{log_prefix} [ANTI SPLIT-BRAIN] Preco FIX ainda indisponivel para {symbol}. Usando fallback MT5.")
+
+                # -------------------------------------------------------------
+                # PASSO 3: Chamar decision engine com dados corretos
+                # -------------------------------------------------------------
+                trade_request = analyze_and_get_signal(
+                    instance,
+                    StrategyContract,                    # ← objeto correto
+                    saved_ia,
+                    log_prefix,
+                    fix_current_price=fix_current_price  # ← preço real do FIX
+                )
+
+                if trade_request:
+                    logger.info(f"{log_prefix} ✅ CÉREBRO GEROU ORDEM: {trade_request}")
+                    clordid = str(uuid.uuid4())
+
+                    # Mapeamento de side string para int FIX
+                    side_int = 1 if trade_request['side'] == 'Buy' else 2
+
+                    success = fix_connector.build_and_send_new_order_single(
+                        clordid=clordid,
+                        symbol=trade_request['symbol_id'],
+                        side=side_int,
+                        quantity=trade_request['quantity_in_lots']
+                    )
+
+                    if success:
+                        logger.info(f"{log_prefix} 🚀 ORDEM ENVIADA VIA FIX. ClOrdID: {clordid}")
+                        # Adiciona ao rastreador do Guardião
+                        open_positions_tracker[clordid] = {
+                            'symbol': trade_request['symbol_id'],
+                            'volume': trade_request['quantity_in_lots'],
+                            'side': side_int
+                        }
+                        cache.set(cache_key_pos, open_positions_tracker, timeout=None) # Persist to Redis
+
+                        # Registro de Auditoria
+                        TradeLog.objects.create(
+                            instance=instance, user=instance.user, trading_account=account,
+                            status='SUCCESS',
                             symbol=trade_request['symbol_id'],
-                            side=side_int,
-                            quantity=trade_request['quantity_in_lots']
+                            trade_type=trade_request['side'],
+                            volume=trade_request['quantity_in_lots'],
+                            broker_order_id=clordid,
+                            price_entry=trade_request.get('entry_price'),  # ← NOVO
+                            sl_price=trade_request.get('sl_price'),         # ← NOVO
+                            comment="Ordem enviada pelo Motor de Execução."
                         )
-
-                        if success:
-                            logger.info(f"{log_prefix} 🚀 ORDEM ENVIADA VIA FIX. ClOrdID: {clordid}")
-                            # Adiciona ao rastreador do Guardião
-                            open_positions_tracker[clordid] = {
-                                'symbol': trade_request['symbol_id'],
-                                'volume': trade_request['quantity_in_lots'],
-                                'side': side_int
-                            }
-                            cache.set(cache_key_pos, open_positions_tracker, timeout=None) # Persist to Redis
-
-                            # Registro de Auditoria
-                            TradeLog.objects.create(
-                                instance=instance, user=instance.user, trading_account=account,
-                                status='SUCCESS',
-                                symbol=trade_request['symbol_id'], trade_type=trade_request['side'],
-                                volume=trade_request['quantity_in_lots'], broker_order_id=clordid,
-                                comment="Ordem enviada pelo Motor de Execução."
-                            )
 
             time.sleep(getattr(settings, 'TRADING_CYCLE_INTERVAL_SECONDS', 5))
 

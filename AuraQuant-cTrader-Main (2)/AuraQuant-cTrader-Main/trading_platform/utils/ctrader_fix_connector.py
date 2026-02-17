@@ -617,3 +617,52 @@ class FIXConnector:
                 # usa preço do sinal (fallback)
         """
         return self.last_prices.get(symbol, None)
+    
+    def send_market_data_request(self, symbol, req_id=None):
+        """
+        Envia um MarketDataRequest (Tag 35=V) ao broker para subscrever
+        ao feed de preços em tempo real de um símbolo.
+
+        IMPORTANTE: Sem esta mensagem, o broker nunca envia preços.
+        Deve ser chamado após o logon para cada símbolo que o robô opera.
+
+        Protocolo FIX — tags:
+        Tag 262 = MDReqID        (ID único da requisição)
+        Tag 263 = SubscriptionRequestType: '1' = Snapshot + Updates
+        Tag 264 = MarketDepth:  '1' = Top of Book (melhor Bid/Ask)
+        Tag 267 = NoMDEntryTypes (quantos tipos pedimos)
+        Tag 269 = MDEntryType:  '0'=Bid, '1'=Ask
+        Tag 146 = NoRelatedSym  (quantos símbolos)
+        Tag 55  = Symbol
+
+        Args:
+            symbol (str): Símbolo a subscrever (ex: 'EURUSD')
+            req_id (str): ID único da requisição. Gerado automaticamente se None.
+        """
+        if not self.is_connected_quote:
+            logger.warning(
+                f"[QUOTE] Nao e possivel subscrever '{symbol}': "
+                f"sessao QUOTE nao conectada."
+            )
+            return False
+
+        import uuid
+        md_req_id = req_id or str(uuid.uuid4())[:8]
+
+        md_request = simplefix.FixMessage()
+        md_request.append_pair(35, "V")           # MarketDataRequest
+        md_request.append_pair(262, md_req_id)    # MDReqID
+        md_request.append_pair(263, "1")          # SubscriptionRequestType: Snapshot + Updates
+        md_request.append_pair(264, "1")          # MarketDepth: Top of Book
+        md_request.append_pair(267, "2")          # NoMDEntryTypes: pedimos 2 tipos
+        md_request.append_pair(269, "0")          # MDEntryType: Bid
+        md_request.append_pair(269, "1")          # MDEntryType: Ask
+        md_request.append_pair(146, "1")          # NoRelatedSym: 1 símbolo
+        md_request.append_pair(55, symbol)        # Symbol
+
+        logger.info(
+            f"[QUOTE] Subscrevendo feed de precos para '{symbol}' "
+            f"(MDReqID={md_req_id})"
+        )
+        self._send_message(md_request, 'quote')
+        return True

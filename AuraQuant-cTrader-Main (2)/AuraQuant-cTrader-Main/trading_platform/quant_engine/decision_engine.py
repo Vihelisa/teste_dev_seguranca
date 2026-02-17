@@ -102,13 +102,12 @@ def analyze_and_trade(instance, StrategyContract, saved_ia, log_prefix):
         logger.info(f"{log_prefix} REPROVADO. Prob. ({best_decision['prediction_proba']:.2%}) < Limiar ({limiar_otimo:.2f}).")
 
 
-def get_trade_signal(instance, StrategyContract, saved_ia, log_prefix):
+def get_trade_signal(instance, StrategyContract, saved_ia, log_prefix, fix_current_price=None):
     """
     Core logic for analyzing a strategy signal. Returns a trade request dictionary if a trade is approved.
     Esta é uma versão modificada de analyze_and_trade para o motor FIX.
     """
-    return analyze_and_get_signal(instance, StrategyContract, saved_ia, log_prefix)
-
+    return analyze_and_get_signal(instance, StrategyContract, saved_ia, log_prefix, fix_current_price=fix_current_price)
 
 # =============================================================================
 #           FUNÇÃO AUXILIAR: CÁLCULO CORRETO DE LOTE
@@ -334,7 +333,7 @@ def calculate_lot_size_for_risk(symbol_info, entry_price, sl_price, risk_amount)
         return Decimal('0.01')
 
 
-def analyze_and_get_signal(instance, StrategyContract, saved_ia, log_prefix):
+def analyze_and_get_signal(instance, StrategyContract, saved_ia, log_prefix, fix_current_price=None):
     """
     The definitive Decision Engine logic (previously get_trade_signal).
     """
@@ -664,12 +663,32 @@ def analyze_and_get_signal(instance, StrategyContract, saved_ia, log_prefix):
                 # Em caso de erro, sempre usa o lote fixo como fallback de segurança
                 final_lot_size = Decimal(str(instance.lot_size))
 
+        # =====================================================================
+        # ANTI SPLIT-BRAIN: substituir entry_price pelo preço real do FIX
+        # =====================================================================
+        # O sinal foi gerado com dados históricos do MT5 (data_processor).
+        # Se o tasks.py injetou o preço atual do feed FIX, usamos ele
+        # para garantir que decisão e execução ocorrem na mesma realidade
+        # de mercado — eliminando o risco de slippage fantasma.
+        if fix_current_price is not None:
+            old_price = trade_details.get('entry_price', 'N/A')
+            trade_details['entry_price'] = fix_current_price
+            logger.info(
+                f"{log_prefix} [SPLIT-BRAIN CORRIGIDO] "
+                f"entry_price substituido: {old_price} (MT5) → {fix_current_price} (FIX)"
+            )
+        else:
+            logger.warning(
+                f"{log_prefix} [SPLIT-BRAIN] fix_current_price nao disponivel. "
+                f"Usando entry_price do sinal MT5. Risco de divergencia de preco!"
+            )
+
         trade_request = {
-            'symbol_id': assets[0] if strategy_obj.strategy_type != 'PAIRS' else assets, # tasks.py uses symbol_id
+            'symbol_id': assets[0] if strategy_obj.strategy_type != 'PAIRS' else assets,
             'comment': f"BS-{strategy_obj.id}-{instance.id}",
             'side': trade_details['trade_type_str'],
             'quantity_in_lots': final_lot_size,
-            **trade_details # Inclui entry_price, sl_price, tp_price, etc
+            **trade_details
         }
         return trade_request
     

@@ -140,9 +140,20 @@ else:
     CSRF_COOKIE_SECURE = True
 
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': ['rest_framework.authentication.TokenAuthentication','rest_framework.authentication.SessionAuthentication'],
-    'DEFAULT_THROTTLE_CLASSES': ['rest_framework.throttling.AnonRateThrottle','rest_framework.throttling.UserRateThrottle'],
-    'DEFAULT_THROTTLE_RATES': {'anon': config('THROTTLE_RATE_ANON', default='100/hour'), 'user': config('THROTTLE_RATE_USER', default='1000/hour')}
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+        'rest_framework.authentication.SessionAuthentication'
+    ],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle'
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': config('THROTTLE_RATE_ANON', default='100/hour'), 
+        'user': config('THROTTLE_RATE_USER', default='1000/hour'),
+        'login': config('THROTTLE_RATE_LOGIN', default='5/minute'),      # ← NOVO
+        'password_reset': config('THROTTLE_RATE_PWD_RESET', default='3/minute'),  # ← NOVO
+    }
 }
 
 # =============================================================================

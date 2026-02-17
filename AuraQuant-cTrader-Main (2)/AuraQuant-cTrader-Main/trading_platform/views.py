@@ -39,6 +39,18 @@ from .utils.mt5_connector import mt5_connection
 logger = logging.getLogger(__name__)
 
 # =============================================================================
+#           THROTTLE CLASSES CUSTOMIZADAS
+# =============================================================================
+
+class LoginRateThrottle(AnonRateThrottle):
+    """Throttle específico para login — 5 tentativas por minuto."""
+    scope = 'login'
+
+class PasswordResetRateThrottle(AnonRateThrottle):
+    """Throttle específico para reset de senha — 3 tentativas por minuto."""
+    scope = 'password_reset'
+
+# =============================================================================
 #           HEALTHCHECK E VIEWS DE AUTENTICAÇÃO
 # =============================================================================
 
@@ -51,7 +63,7 @@ def healthcheck(request):
 @api_view(['POST'])
 @authentication_classes([])
 @permission_classes([AllowAny])
-@throttle_classes([AnonRateThrottle])
+@throttle_classes([LoginRateThrottle])
 def login_user(request):
     username = request.data.get('username', '').strip()
     password = request.data.get('password', '')
@@ -124,7 +136,7 @@ def register_user(request):
 @csrf_exempt
 @api_view(['POST'])
 @permission_classes([AllowAny])
-@throttle_classes([AnonRateThrottle])
+@throttle_classes([PasswordResetRateThrottle])
 def password_reset_request(request):
     email = request.data.get('email')
     if not email:

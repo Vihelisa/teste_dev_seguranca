@@ -173,9 +173,9 @@ class ExecutionReportHandler:
             # O ClOrdID foi gerado em build_and_send_new_order_single()
             # e deveria ter sido salvo no TradeLog com status='PENDING'
             trade_log = TradeLog.objects.filter(
-                request_data__clordid=report_data['clord_id']
+                broker_order_id=report_data['clord_id']
             ).first()
-            
+                        
             if not trade_log:
                 self.logger.error(
                     f"TradeLog não encontrado para ClOrdID={report_data['clord_id']}. "
@@ -244,7 +244,7 @@ class ExecutionReportHandler:
         try:
             # Busca o TradeLog correspondente
             trade_log = TradeLog.objects.filter(
-                request_data__clordid=report_data['clord_id']
+                broker_order_id=report_data['clord_id']
             ).first()
             
             if not trade_log:
@@ -301,7 +301,7 @@ class ExecutionReportHandler:
         
         try:
             trade_log = TradeLog.objects.filter(
-                request_data__clordid=report_data['clord_id']
+                broker_order_id=report_data['clord_id']
             ).first()
             
             if trade_log:
@@ -334,7 +334,7 @@ class ExecutionReportHandler:
         
         try:
             trade_log = TradeLog.objects.filter(
-                request_data__clordid=report_data['clord_id']
+                broker_order_id=report_data['clord_id']
             ).first()
             
             if trade_log:
@@ -361,7 +361,7 @@ class ExecutionReportHandler:
         
         try:
             trade_log = TradeLog.objects.filter(
-                request_data__clordid=report_data['clord_id']
+                broker_order_id=report_data['clord_id']
             ).first()
             
             if trade_log:
@@ -391,7 +391,7 @@ class ExecutionReportHandler:
         Returns:
             bytes ou None: Valor do campo
         """
-        value = fix_message.get(tag)
+        value = fix_message.get_value(tag)
         
         if required and not value:
             raise ValueError(f"Campo obrigatório {field_name} (Tag {tag}) não encontrado")
