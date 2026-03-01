@@ -307,6 +307,13 @@ if not DEBUG:
     # XSS Protection
     SECURE_BROWSER_XSS_FILTER = True
 
+# =============================================================================
+#           13.5. CREDENCIAIS MT5 PARA COLETA DE DADOS (BACKTEST)
+# =============================================================================
+
+MT5_DATA_LOGIN = config('MT5_DATA_LOGIN', default=None)
+MT5_DATA_PASSWORD = config('MT5_DATA_PASSWORD', default=None)
+MT5_DATA_SERVER = config('MT5_DATA_SERVER', default=None)
 
 # =============================================================================
 #           14. CONFIGURAÇÕES FIX PROTOCOL (cTrader)
@@ -332,3 +339,4 @@ FIX_CONNECTION_TIMEOUT = int(os.getenv('FIX_CONNECTION_TIMEOUT', '30'))
 
 # Heartbeat interval (segundos)
 FIX_HEARTBEAT_INTERVAL = int(os.getenv('FIX_HEARTBEAT_INTERVAL', '30'))
+

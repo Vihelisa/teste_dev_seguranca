@@ -1,0 +1,205 @@
+# ============================================================================
+# DOCKER COMPOSE — Stack Completa Aura Quant Platform
+# Serviços: PostgreSQL, Redis, Django, Celery Worker, Celery Beat, Frontend
+# ============================================================================
+
+version: '3.8'
+
+services:
+  # ==========================================================================
+  # POSTGRESQL — Banco de Dados Principal
+  # ==========================================================================
+  postgres:
+    image: postgres:17-alpine
+    container_name: aura_postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME:-aura_quant_db}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres123}
+      POSTGRES_INITDB_ARGS: "-E UTF8 --locale=en_US.UTF-8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aura_network
+
+  # ==========================================================================
+  # REDIS — Cache e Message Broker
+  # ==========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: aura_redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aura_network
+
+  # ==========================================================================
+  # DJANGO — Backend API
+  # ==========================================================================
+  django:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aura_django
+    command: >
+      sh -c "
+        echo 'Aguardando PostgreSQL...' &&
+        while ! nc -z postgres 5432; do sleep 1; done &&
+        echo 'PostgreSQL pronto!' &&
+        echo 'Aguardando Redis...' &&
+        while ! nc -z redis 6379; do sleep 1; done &&
+        echo 'Redis pronto!' &&
+        echo 'Rodando migrações...' &&
+        python manage.py migrate --noinput &&
+        echo 'Criando superusuário (se não existir)...' &&
+        python manage.py shell -c \"from django.contrib.auth import get_user_model; User = get_user_model(); User.objects.filter(username='admin').exists() or User.objects.create_superuser('admin', 'admin@aura.com', 'admin123')\" &&
+        echo 'Iniciando Django...' &&
+        python manage.py runserver 0.0.0.0:8000
+      "
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - REDIS_URL=redis://redis:6379/0
+      - DEBUG=True
+      - ALLOWED_HOSTS=localhost,127.0.0.1,django
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - media_files:/app/media
+      - static_files:/app/staticfiles
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - aura_network
+
+  # ==========================================================================
+  # CELERY WORKER — Processamento Assíncrono
+  # ==========================================================================
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aura_celery_worker
+    command: >
+      sh -c "
+        echo 'Aguardando Django iniciar...' &&
+        sleep 10 &&
+        echo 'Iniciando Celery Worker...' &&
+        celery -A core worker \
+          --loglevel=info \
+          --concurrency=2 \
+          --max-tasks-per-child=1000 \
+          --prefetch-multiplier=1
+      "
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - .:/app
+      - media_files:/app/media
+    depends_on:
+      - postgres
+      - redis
+      - django
+    networks:
+      - aura_network
+
+  # ==========================================================================
+  # CELERY BEAT — Agendador de Tarefas
+  # ==========================================================================
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aura_celery_beat
+    command: >
+      sh -c "
+        echo 'Aguardando Django iniciar...' &&
+        sleep 15 &&
+        echo 'Iniciando Celery Beat...' &&
+        celery -A core beat \
+          --loglevel=info \
+          --scheduler django_celery_beat.schedulers:DatabaseScheduler
+      "
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - .:/app
+    depends_on:
+      - postgres
+      - redis
+      - django
+    networks:
+      - aura_network
+
+  # ==========================================================================
+  # FRONTEND — React (Build de Produção)
+  # ==========================================================================
+  frontend:
+    image: node:18-alpine
+    container_name: aura_frontend
+    working_dir: /app
+    command: >
+      sh -c "
+        echo 'Instalando dependências do frontend...' &&
+        npm install --legacy-peer-deps &&
+        echo 'Iniciando servidor de desenvolvimento...' &&
+        npm run dev -- --host 0.0.0.0
+      "
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    networks:
+      - aura_network
+
+# ============================================================================
+# VOLUMES PERSISTENTES
+# ============================================================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  media_files:
+    driver: local
+  static_files:
+    driver: local
+
+# ============================================================================
+# REDE INTERNA
+# ============================================================================
+networks:
+  aura_network:
+    driver: bridge

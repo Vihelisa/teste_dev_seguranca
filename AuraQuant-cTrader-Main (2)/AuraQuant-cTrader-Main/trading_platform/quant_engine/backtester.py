@@ -3,7 +3,10 @@ import pandas as pd
 from pprint import pprint
 import traceback
 import importlib
+import logging
 from . import data_processor, ml_trainer, portfolio_analyzer
+
+logger = logging.getLogger(__name__)
 
 def run_strategy_backtest(strategy_name: str, strategy_id: int, assets: list, params: dict, capital_inicial: float, dias: int) -> dict:
     """
@@ -20,7 +23,34 @@ def run_strategy_backtest(strategy_name: str, strategy_id: int, assets: list, pa
         StrategyContract = strategy_module.StrategyContract
 
         # 2. COLETAR OS DADOS DE MERCADO
-        market_data = data_processor.prepare_data_for_assets(assets, dias=dias)
+        # Criar objeto de conta temporário para o backtester usar credenciais do .env
+        from trading_platform.models import TradingAccount, User
+        from django.conf import settings
+
+        mt5_login = getattr(settings, 'MT5_DATA_LOGIN', None)
+        mt5_password = getattr(settings, 'MT5_DATA_PASSWORD', None)
+        mt5_server = getattr(settings, 'MT5_DATA_SERVER', None)
+
+        # Criar objeto temporário de conta (não salva no banco)
+        if mt5_login and mt5_password and mt5_server:
+            # Busca ou cria um usuário admin para o backtest
+            admin_user, _ = User.objects.get_or_create(username='backtest_system', defaults={'is_staff': True})
+            
+            temp_account = TradingAccount(
+                user=admin_user,
+                account_login=mt5_login,
+                server=mt5_server,
+                nickname='Backtest Data Account'
+            )
+            temp_account.set_password(mt5_password)
+            # NÃO chamar .save() - mantém em memória apenas
+            
+            logger.info(f"[BACKTESTER] Usando credenciais MT5_DATA_* para coleta de dados.")
+            market_data = data_processor.prepare_data_for_assets(assets, dias=dias, account=temp_account)
+        else:
+            logger.warning("Credenciais MT5_DATA_* não configuradas. Tentando conexão padrão.")
+            market_data = data_processor.prepare_data_for_assets(assets, dias=dias)
+
         if market_data is None:
             raise ValueError("A coleta de dados falhou ou não retornou dados.")
 
