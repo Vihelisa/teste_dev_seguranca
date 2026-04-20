@@ -32,7 +32,6 @@ jiter==0.12.0
 joblib==1.5.3
 kombu==5.6.2
 llvmlite==0.46.0
-metatrader5==5.0.5488
 msgpack==1.1.2
 narwhals==2.15.0
 numba==0.63.1
