@@ -39,18 +39,6 @@ from .utils.mt5_connector import mt5_connection
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-#           THROTTLE CLASSES CUSTOMIZADAS
-# =============================================================================
-
-class LoginRateThrottle(AnonRateThrottle):
-    """Throttle específico para login — 5 tentativas por minuto."""
-    scope = 'login'
-
-class PasswordResetRateThrottle(AnonRateThrottle):
-    """Throttle específico para reset de senha — 3 tentativas por minuto."""
-    scope = 'password_reset'
-
-# =============================================================================
 #           HEALTHCHECK E VIEWS DE AUTENTICAÇÃO
 # =============================================================================
 
@@ -63,7 +51,7 @@ def healthcheck(request):
 @api_view(['POST'])
 @authentication_classes([])
 @permission_classes([AllowAny])
-@throttle_classes([LoginRateThrottle])
+@throttle_classes([AnonRateThrottle])
 def login_user(request):
     username = request.data.get('username', '').strip()
     password = request.data.get('password', '')
@@ -104,6 +92,7 @@ def register_user(request):
     """Registra um novo usuário na plataforma."""
     email = request.data.get('email', '').strip().lower()
     password = request.data.get('password', '')
+    phone = request.data.get('phone', '').strip()
 
     # Validações de segurança
     if not all([email, password]):
@@ -121,10 +110,21 @@ def register_user(request):
     if not re.search(r'[A-Za-z]', password) or not re.search(r'[0-9]', password):
         return Response({"error": "Senha deve conter pelo menos uma letra e um número."}, status=status.HTTP_400_BAD_REQUEST)
 
+    # Validação de formato de telefone (se informado)
+    if phone and not re.match(r'^\(\d{2}\) \d{4,5}-\d{4}$', phone):
+        return Response({"error": "Formato de telefone inválido."}, status=status.HTTP_400_BAD_REQUEST)
+
     if User.objects.filter(username=email).exists():
         return Response({"error": "Um usuário com este e-mail já existe."}, status=status.HTTP_409_CONFLICT)
     try:
         user = User.objects.create_user(username=email, email=email, password=password)
+
+        # Salva o telefone no perfil do usuário, se informado
+        if phone:
+            profile, _ = UserProfile.objects.get_or_create(user=user)
+            profile.phone_number = phone
+            profile.save(update_fields=['phone_number'])
+
         token, _ = Token.objects.get_or_create(user=user)
         logger.info(f"Usuário '{email}' registrado com sucesso.")
         return Response({"status": "SUCESSO", "token": token.key})
@@ -136,7 +136,7 @@ def register_user(request):
 @csrf_exempt
 @api_view(['POST'])
 @permission_classes([AllowAny])
-@throttle_classes([PasswordResetRateThrottle])
+@throttle_classes([AnonRateThrottle])
 def password_reset_request(request):
     email = request.data.get('email')
     if not email:

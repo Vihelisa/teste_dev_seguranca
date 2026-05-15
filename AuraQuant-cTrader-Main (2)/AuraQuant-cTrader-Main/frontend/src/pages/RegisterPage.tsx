@@ -14,10 +14,21 @@ import { FloatingParticles } from "@/components/FloatingParticles";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
+const formatPhone = (value: string): string => {
+  const digits = value.replace(/\D/g, '').slice(0, 11);
+  if (digits.length <= 2) return digits.length ? `(${digits}` : '';
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7, 11)}`;
+};
+
 const registerSchema = z.object({
   name: z.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
   email: z.string().email("Email inválido"),
-  phone: z.string().min(10, "Telefone inválido").optional(),
+  phone: z.union([
+    z.string().regex(/^\(\d{2}\) \d{4,5}-\d{4}$/, "Telefone inválido"),
+    z.literal(''),
+  ]).optional(),
   password: z.string().min(8, "Senha deve ter pelo menos 8 caracteres"),
   confirmPassword: z.string(),
   acceptTerms: z.boolean().refine(val => val === true, {
@@ -47,10 +58,13 @@ const RegisterPage = () => {
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm<RegisterForm>({
     resolver: zodResolver(registerSchema),
   });
+
+  const phoneRegister = register("phone");
 
   const onSubmit = async (data: RegisterForm) => {
     setIsLoading(true);
@@ -60,6 +74,7 @@ const RegisterPage = () => {
         email: data.email,
         password: data.password,
         name: data.name,
+        phone: data.phone || '',
       });
       // After successful registration, the backend might automatically log the user in.
       // A more robust flow would be to redirect to a "please verify your email" page
@@ -200,9 +215,17 @@ const RegisterPage = () => {
                       <Input
                         id="phone"
                         type="tel"
-                        placeholder="(11) 9999-9999"
+                        placeholder="(11) 99999-9999"
+                        maxLength={15}
                         className="pl-10 bg-input/20 border-border/30 focus:border-accent focus:ring-2 focus:ring-accent/50 transition-all duration-300 hover:bg-input/40 focus:bg-input/50"
-                        {...register("phone")}
+                        name={phoneRegister.name}
+                        ref={phoneRegister.ref}
+                        onBlur={phoneRegister.onBlur}
+                        onChange={(e) => {
+                          const formatted = formatPhone(e.target.value);
+                          e.target.value = formatted;
+                          setValue("phone", formatted, { shouldValidate: true });
+                        }}
                       />
                     </div>
                     {errors.phone && (
