@@ -61,7 +61,7 @@ def login_user(request):
     
     from django.contrib.auth import authenticate
     user = authenticate(username=username, password=password)
-    
+
     if user is not None:
         token, _ = Token.objects.get_or_create(user=user)
         logger.info(f"Usuário '{username}' logado com sucesso.")
@@ -70,6 +70,17 @@ def login_user(request):
             "user": {"id": user.id, "email": user.email}
         })
     else:
+        # Verifica se o usuário existe mas está inativo (email não confirmado)
+        try:
+            inactive_user = User.objects.get(username=username, is_active=False)
+            if inactive_user.check_password(password):
+                logger.warning(f"Login bloqueado: email não confirmado para '{username}'.")
+                return Response(
+                    {"error": "Confirme seu email antes de fazer login. Verifique sua caixa de entrada."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        except User.DoesNotExist:
+            pass
         logger.warning(f"Falha na tentativa de login para o usuário '{username}'.")
         return Response({"error": "Credenciais inválidas."}, status=status.HTTP_401_UNAUTHORIZED)
 
@@ -117,7 +128,8 @@ def register_user(request):
     if User.objects.filter(username=email).exists():
         return Response({"error": "Um usuário com este e-mail já existe."}, status=status.HTTP_409_CONFLICT)
     try:
-        user = User.objects.create_user(username=email, email=email, password=password)
+        # Cria o usuário com is_active=False até confirmação do email
+        user = User.objects.create_user(username=email, email=email, password=password, is_active=False)
 
         # Salva o telefone no perfil do usuário, se informado
         if phone:
@@ -125,12 +137,61 @@ def register_user(request):
             profile.phone_number = phone
             profile.save(update_fields=['phone_number'])
 
-        token, _ = Token.objects.get_or_create(user=user)
-        logger.info(f"Usuário '{email}' registrado com sucesso.")
-        return Response({"status": "SUCESSO", "token": token.key})
+        # Gera token de verificação (mesmo mecanismo do reset de senha)
+        token_generator = PasswordResetTokenGenerator()
+        token = token_generator.make_token(user)
+        uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
+
+        # Monta e envia o email de confirmação
+        verification_link = f"{settings.FRONTEND_URL}/verify-email?uidb64={uidb64}&token={token}"
+        send_mail(
+            subject='Confirme seu cadastro - AuraQuant',
+            message=(
+                f'Olá,\n\n'
+                f'Obrigado por se cadastrar na AuraQuant!\n\n'
+                f'Clique no link abaixo para confirmar seu email e ativar sua conta:\n'
+                f'{verification_link}\n\n'
+                f'O link expira em 3 dias.\n\n'
+                f'Se você não criou esta conta, ignore este email.\n\n'
+                f'Atenciosamente,\nEquipe AuraQuant'
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[email],
+            fail_silently=False,
+        )
+
+        logger.info(f"Usuário '{email}' registrado. Email de confirmação enviado.")
+        return Response({"status": "VERIFICAÇÃO_PENDENTE"}, status=status.HTTP_201_CREATED)
     except Exception as e:
         logger.error(f"Erro ao registrar usuário '{email}': {e}\n{traceback.format_exc()}")
         return Response({"error": "Erro interno ao criar usuário."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def verify_email(request):
+    """Ativa a conta do usuário a partir do link de confirmação enviado por email."""
+    uidb64 = request.query_params.get('uidb64')
+    token = request.query_params.get('token')
+
+    if not uidb64 or not token:
+        return Response({'error': 'Parâmetros inválidos.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        uid = force_str(urlsafe_base64_decode(uidb64))
+        user = User.objects.get(pk=uid)
+    except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+        return Response({'error': 'Link inválido.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    token_generator = PasswordResetTokenGenerator()
+    if not token_generator.check_token(user, token):
+        return Response({'error': 'Link inválido ou expirado.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    user.is_active = True
+    user.save(update_fields=['is_active'])
+    logger.info(f"Email do usuário '{user.email}' verificado com sucesso.")
+    return Response({'status': 'Email confirmado com sucesso.'})
 
 
 @csrf_exempt

@@ -80,11 +80,11 @@ const RegisterPage = () => {
       // A more robust flow would be to redirect to a "please verify your email" page
       // or directly to the login page. For now, we'll redirect to login.
       toast({
-        title: "Conta Criada com Sucesso!",
-        description: "Você já pode fazer o login com suas novas credenciais.",
+        title: "Cadastro Realizado!",
+        description: "Enviamos um link de confirmação para o seu email. Verifique sua caixa de entrada.",
         variant: "default",
       });
-      navigate("/login");
+      navigate("/verify-email-sent");
     } catch (error: any) {
       const errorMessage = error.response?.data?.error || "Não foi possível criar sua conta.";
       toast({

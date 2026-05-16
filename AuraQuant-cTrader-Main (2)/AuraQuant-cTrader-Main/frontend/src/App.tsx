@@ -29,6 +29,8 @@ const Onboarding = lazy(() => import('./pages/Onboarding'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 const MyAccounts = lazy(() => import('./pages/MyAccounts'));
 const TradingHistory = lazy(() => import('./pages/TradingHistory'));
+const VerifyEmailSent = lazy(() => import('./pages/VerifyEmailSentPage'));
+const VerifyEmail = lazy(() => import('./pages/VerifyEmailPage'));
 
 
 const queryClient = new QueryClient();
@@ -72,6 +74,8 @@ const App = () => (
               <Route path="/" element={<Index />} />
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
+              <Route path="/verify-email-sent" element={<VerifyEmailSent />} />
+              <Route path="/verify-email" element={<VerifyEmail />} />
               <Route path="/marketplace" element={<Marketplace />} />
               <Route path="/marketplace/strategy/:id" element={<RobotDetails />} />
               <Route path="/products" element={<Products />} />

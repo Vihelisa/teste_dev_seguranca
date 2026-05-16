@@ -14,6 +14,11 @@ export const registerUser = async (userInfo: any) => {
   return response.data;
 };
 
+export const verifyEmail = async (uidb64: string, token: string) => {
+  const response = await apiClient.get('/api/verify-email/', { params: { uidb64, token } });
+  return response.data;
+};
+
 export const fetchUserProfile = async (): Promise<User> => {
   const response = await apiClient.get('/api/user/');
   return response.data;
