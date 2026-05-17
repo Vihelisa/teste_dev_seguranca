@@ -78,7 +78,7 @@ services:
       - DB_PORT=5432
       - REDIS_URL=redis://redis:6379/0
       - DEBUG=True
-      - ALLOWED_HOSTS=localhost,127.0.0.1,django
+      - ALLOWED_HOSTS=13.223.193.233,localhost,127.0.0.1,auraquant-test.duckdns.org
     ports:
       - "8000:8000"
     volumes:
@@ -175,7 +175,7 @@ services:
         npm run dev -- --host 0.0.0.0
       "
     ports:
-      - "5173:5173"
+      - "5173:8080"
     volumes:
       - ./frontend:/app
       - /app/node_modules
