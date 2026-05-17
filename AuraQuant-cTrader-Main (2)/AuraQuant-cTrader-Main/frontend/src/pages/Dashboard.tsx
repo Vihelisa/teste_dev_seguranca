@@ -261,7 +261,7 @@ const Dashboard = () => {
         description="Monitore seus robôs ativos, performance e histórico de operações em tempo real."
         showFooter={false}
       >
-        <div className="container mx-auto px-6 py-12">
+        <div id="dashboard-header" className="container mx-auto px-6 py-12">
           {/* Overview Stats */}
           <div id="stats-section" className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
             {isLoadingPulse ? (
