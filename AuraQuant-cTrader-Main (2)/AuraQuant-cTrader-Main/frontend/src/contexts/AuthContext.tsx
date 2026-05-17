@@ -13,6 +13,7 @@ export interface RegisterUserInfo {
     email: string;
     password: string;
     name: string;
+    phone?: string;
 }
 
 interface AuthContextType {

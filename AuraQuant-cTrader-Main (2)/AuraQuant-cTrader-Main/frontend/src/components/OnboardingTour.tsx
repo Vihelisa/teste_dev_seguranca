@@ -62,51 +62,53 @@ export const OnboardingTour = ({ isVisible, onComplete, onSkip }: OnboardingTour
   const currentStepData = tourSteps[currentStep];
 
   useEffect(() => {
-    if (isVisible && currentStepData) {
-      const targetElement = document.getElementById(currentStepData.target);
-      if (targetElement) {
-        const rect = targetElement.getBoundingClientRect();
-        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-        
-        let top = rect.top + scrollTop;
-        let left = rect.left;
+    if (!isVisible || !currentStepData) return;
 
-        // Adjust position based on desired placement
-        switch (currentStepData.position) {
-          case "bottom":
-            top = rect.bottom + scrollTop + 10;
-            left = rect.left + rect.width / 2 - 200; // Center horizontally
-            break;
-          case "top":
-            top = rect.top + scrollTop - 150;
-            left = rect.left + rect.width / 2 - 200;
-            break;
-          case "right":
-            top = rect.top + scrollTop + rect.height / 2 - 75;
-            left = rect.right + 10;
-            break;
-          case "left":
-            top = rect.top + scrollTop + rect.height / 2 - 75;
-            left = rect.left - 410;
-            break;
-        }
+    const targetElement = document.getElementById(currentStepData.target);
+    if (!targetElement) return;
 
-        // Ensure tooltip stays within viewport
-        const maxLeft = window.innerWidth - 420;
-        const maxTop = window.innerHeight + scrollTop - 200;
-        
-        left = Math.max(10, Math.min(left, maxLeft));
-        top = Math.max(scrollTop + 10, Math.min(top, maxTop));
+    const calculatePosition = () => {
+      const rect = targetElement.getBoundingClientRect();
 
-        setTourPosition({ top, left });
+      // position: fixed uses viewport coordinates — scrollTop must NOT be added
+      let top = rect.top;
+      let left = rect.left;
 
-        // Scroll to element with some offset
-        window.scrollTo({
-          top: rect.top + scrollTop - 100,
-          behavior: 'smooth'
-        });
+      switch (currentStepData.position) {
+        case "bottom":
+          top = rect.bottom + 10;
+          left = rect.left + rect.width / 2 - 200;
+          break;
+        case "top":
+          top = rect.top - 160;
+          left = rect.left + rect.width / 2 - 200;
+          break;
+        case "right":
+          top = rect.top + rect.height / 2 - 75;
+          left = rect.right + 10;
+          break;
+        case "left":
+          top = rect.top + rect.height / 2 - 75;
+          left = rect.left - 410;
+          break;
       }
-    }
+
+      // Keep card within viewport bounds
+      const maxLeft = window.innerWidth - 420;
+      const maxTop = window.innerHeight - 200;
+
+      left = Math.max(10, Math.min(left, maxLeft));
+      top = Math.max(10, Math.min(top, maxTop));
+
+      setTourPosition({ top, left });
+    };
+
+    // 1. Scroll the target element into view first
+    targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    // 2. Wait for the scroll animation to finish, then calculate position
+    const timer = setTimeout(calculatePosition, 400);
+    return () => clearTimeout(timer);
   }, [currentStep, isVisible, currentStepData]);
 
   if (!isVisible || !currentStepData) return null;
