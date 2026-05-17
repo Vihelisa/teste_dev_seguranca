@@ -157,3 +157,4 @@ FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:8080')
 # =============================================================================
 AUTH_PASSWORD_VALIDATORS = [{'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},{'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator', 'OPTIONS': {'min_length': 8}},{'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},{'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},]
 LOGGING = {'version': 1,'disable_existing_loggers': False,'formatters': {'verbose': {'format': '{levelname} {asctime} {module} {message}','style': '{',},},'handlers': {'console': {'class': 'logging.StreamHandler', 'formatter': 'verbose'},},'root': {'handlers': ['console'], 'level': 'INFO'},'loggers': {'trading_platform': {'handlers': ['console'], 'level': 'DEBUG' if DEBUG else 'INFO', 'propagate': False,},}
+}
